@@ -13,9 +13,9 @@ func main() {
 		printUsage()
 		return
 	}
-	
+
 	command := os.Args[1]
-	
+
 	switch command {
 	case "add":
 		handleAddProject()
@@ -57,65 +57,65 @@ func handleAddProject() {
 	addCmd := flag.NewFlagSet("add", flag.ExitOnError)
 	projectPath := addCmd.String("p", "", "Project path")
 	addCmd.Parse(os.Args[2:])
-	
+
 	if *projectPath == "" {
 		fmt.Println("Error: Project path is required. Use -p flag.")
-		return
+		os.Exit(1)
 	}
-	
+
 	// Convert to absolute path
 	absPath, err := filepath.Abs(*projectPath)
 	if err != nil {
 		fmt.Printf("Error: Invalid path: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	// Check if directory exists
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		fmt.Printf("Error: Directory does not exist: %s\n", absPath)
-		return
+		os.Exit(1)
 	}
-	
+
 	// Extract project name from path
 	projectName := filepath.Base(absPath)
-	
+
 	pm, err := NewProjectManager()
 	if err != nil {
 		log.Printf("Failed to initialize project manager: %v", err)
-		return
+		os.Exit(1)
 	}
 	defer pm.Close()
-	
+
 	err = pm.AddProject(projectName, absPath)
 	if err != nil {
 		fmt.Printf("Error adding project: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	fmt.Printf("Successfully added project '%s' at %s\n", projectName, absPath)
 }
 
 func handleOpenProject() {
 	if len(os.Args) < 3 {
 		fmt.Println("Error: Project name is required")
-		return
+		os.Exit(1)
 	}
-	
+
 	projectName := os.Args[2]
-	
+
 	pm, err := NewProjectManager()
 	if err != nil {
 		log.Printf("Failed to initialize project manager: %v", err)
-		return
+		os.Exit(1)
 	}
 	defer pm.Close()
-	
+
 	err = pm.OpenProject(projectName)
 	if err != nil {
 		fmt.Printf("Error opening project: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	fmt.Printf("Switched to project '%s'\n", projectName)
 }
 
@@ -123,23 +123,23 @@ func handleListProjects() {
 	pm, err := NewProjectManager()
 	if err != nil {
 		log.Printf("Failed to initialize project manager: %v", err)
-		return
+		os.Exit(1)
 	}
 	defer pm.Close()
-	
+
 	projects, err := pm.ListProjects()
 	if err != nil {
 		fmt.Printf("Error listing projects: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	if len(projects) == 0 {
 		fmt.Println("No projects found. Use 'relay add -p <path>' to add a project.")
 		return
 	}
-	
+
 	currentProject, _ := pm.GetActiveProject()
-	
+
 	fmt.Println("Projects:")
 	for _, project := range projects {
 		marker := "  "
@@ -153,24 +153,24 @@ func handleListProjects() {
 func handleRemoveProject() {
 	if len(os.Args) < 3 {
 		fmt.Println("Error: Project name is required")
-		return
+		os.Exit(1)
 	}
-	
+
 	projectName := os.Args[2]
-	
+
 	pm, err := NewProjectManager()
 	if err != nil {
 		log.Printf("Failed to initialize project manager: %v", err)
-		return
+		os.Exit(1)
 	}
 	defer pm.Close()
-	
+
 	err = pm.RemoveProject(projectName)
 	if err != nil {
 		fmt.Printf("Error removing project: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	fmt.Printf("Successfully removed project '%s'\n", projectName)
 }
 
@@ -178,29 +178,29 @@ func handleSmartCommit() {
 	pm, err := NewProjectManager()
 	if err != nil {
 		log.Printf("Failed to initialize project manager: %v", err)
-		return
+		os.Exit(1)
 	}
 	defer pm.Close()
-	
+
 	project, err := pm.GetActiveProject()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Use 'relay open <project>' to select a project first")
-		return
+		os.Exit(1)
 	}
-	
+
 	gitOps, err := NewGitOperations(project.Path)
 	if err != nil {
 		fmt.Printf("Error initializing git operations: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	err = gitOps.SmartCommit()
 	if err != nil {
 		fmt.Printf("Error during smart commit: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	fmt.Println("Smart commit completed successfully")
 }
 
@@ -208,29 +208,29 @@ func handleSmartPush() {
 	pm, err := NewProjectManager()
 	if err != nil {
 		log.Printf("Failed to initialize project manager: %v", err)
-		return
+		os.Exit(1)
 	}
 	defer pm.Close()
-	
+
 	project, err := pm.GetActiveProject()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Use 'relay open <project>' to select a project first")
-		return
+		os.Exit(1)
 	}
-	
+
 	gitOps, err := NewGitOperations(project.Path)
 	if err != nil {
 		fmt.Printf("Error initializing git operations: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	err = gitOps.Push("")
 	if err != nil {
 		fmt.Printf("Error during push: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	fmt.Println("Push completed successfully")
 }
 
@@ -238,29 +238,29 @@ func handleSmartCommitPush() {
 	pm, err := NewProjectManager()
 	if err != nil {
 		log.Printf("Failed to initialize project manager: %v", err)
-		return
+		os.Exit(1)
 	}
 	defer pm.Close()
-	
+
 	project, err := pm.GetActiveProject()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Use 'relay open <project>' to select a project first")
-		return
+		os.Exit(1)
 	}
-	
+
 	gitOps, err := NewGitOperations(project.Path)
 	if err != nil {
 		fmt.Printf("Error initializing git operations: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	err = gitOps.SmartCommitAndPush()
 	if err != nil {
 		fmt.Printf("Error during smart commit and push: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	
+
 	fmt.Println("Smart commit and push completed successfully")
 }
 
@@ -268,16 +268,16 @@ func handleProjectStatus() {
 	pm, err := NewProjectManager()
 	if err != nil {
 		log.Printf("Failed to initialize project manager: %v", err)
-		return
+		os.Exit(1)
 	}
 	defer pm.Close()
-	
+
 	project, err := pm.GetActiveProject()
 	if err != nil {
 		fmt.Printf("No active project. Use 'relay open <project>' to select one.\n")
 		return
 	}
-	
+
 	fmt.Printf("Active Project: %s\n", project.Name)
 	fmt.Printf("Path: %s\n", project.Path)
 	fmt.Printf("Last Opened: %s\n", project.LastOpened.Format("2006-01-02 15:04:05"))

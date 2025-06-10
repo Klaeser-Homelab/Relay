@@ -20,29 +20,29 @@ func NewDatabase() (*Database, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
-	
+
 	// Create .relay directory if it doesn't exist
 	relayDir := filepath.Join(homeDir, ".relay")
 	if err := os.MkdirAll(relayDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create relay directory: %w", err)
 	}
-	
+
 	// Database file path
 	dbPath := filepath.Join(relayDir, "relay.db")
-	
+
 	conn, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	
+
 	db := &Database{conn: conn}
-	
+
 	// Initialize schema
 	if err := db.initSchema(); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to initialize database schema: %w", err)
 	}
-	
+
 	return db, nil
 }
 
@@ -57,11 +57,11 @@ func (db *Database) initSchema() error {
 		last_opened DATETIME,
 		description TEXT
 	);`
-	
+
 	if _, err := db.conn.Exec(projectsSchema); err != nil {
 		return fmt.Errorf("failed to create projects table: %w", err)
 	}
-	
+
 	// Create project_settings table
 	settingsSchema := `
 	CREATE TABLE IF NOT EXISTS project_settings (
@@ -72,11 +72,11 @@ func (db *Database) initSchema() error {
 		FOREIGN KEY (project_id) REFERENCES projects(id),
 		UNIQUE(project_id, setting_key)
 	);`
-	
+
 	if _, err := db.conn.Exec(settingsSchema); err != nil {
 		return fmt.Errorf("failed to create project_settings table: %w", err)
 	}
-	
+
 	// Create active_project table (stores which project is currently active)
 	activeProjectSchema := `
 	CREATE TABLE IF NOT EXISTS active_project (
@@ -84,11 +84,11 @@ func (db *Database) initSchema() error {
 		project_id INTEGER,
 		FOREIGN KEY (project_id) REFERENCES projects(id)
 	);`
-	
+
 	if _, err := db.conn.Exec(activeProjectSchema); err != nil {
 		return fmt.Errorf("failed to create active_project table: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -96,13 +96,13 @@ func (db *Database) AddProject(name, path string) error {
 	query := `
 	INSERT INTO projects (name, path, created_at, last_opened) 
 	VALUES (?, ?, ?, ?)`
-	
+
 	now := time.Now()
 	_, err := db.conn.Exec(query, name, path, now, now)
 	if err != nil {
 		return fmt.Errorf("failed to add project: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -111,13 +111,13 @@ func (db *Database) GetProject(name string) (*Project, error) {
 	SELECT id, name, path, created_at, last_opened, description 
 	FROM projects 
 	WHERE name = ?`
-	
+
 	row := db.conn.QueryRow(query, name)
-	
+
 	var project Project
 	var lastOpened sql.NullTime
 	var description sql.NullString
-	
+
 	err := row.Scan(
 		&project.ID,
 		&project.Name,
@@ -126,20 +126,20 @@ func (db *Database) GetProject(name string) (*Project, error) {
 		&lastOpened,
 		&description,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("project '%s' not found", name)
 	} else if err != nil {
 		return nil, fmt.Errorf("failed to get project: %w", err)
 	}
-	
+
 	if lastOpened.Valid {
 		project.LastOpened = lastOpened.Time
 	}
 	if description.Valid {
 		project.Description = description.String
 	}
-	
+
 	return &project, nil
 }
 
@@ -148,20 +148,20 @@ func (db *Database) ListProjects() ([]*Project, error) {
 	SELECT id, name, path, created_at, last_opened, description 
 	FROM projects 
 	ORDER BY last_opened DESC`
-	
+
 	rows, err := db.conn.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list projects: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var projects []*Project
-	
+
 	for rows.Next() {
 		var project Project
 		var lastOpened sql.NullTime
 		var description sql.NullString
-		
+
 		err := rows.Scan(
 			&project.ID,
 			&project.Name,
@@ -170,21 +170,21 @@ func (db *Database) ListProjects() ([]*Project, error) {
 			&lastOpened,
 			&description,
 		)
-		
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan project: %w", err)
 		}
-		
+
 		if lastOpened.Valid {
 			project.LastOpened = lastOpened.Time
 		}
 		if description.Valid {
 			project.Description = description.String
 		}
-		
+
 		projects = append(projects, &project)
 	}
-	
+
 	return projects, nil
 }
 
@@ -203,25 +203,25 @@ func (db *Database) RemoveProject(name string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Remove from active_project if it's the active one
 	_, err = db.conn.Exec("DELETE FROM active_project WHERE project_id = ?", project.ID)
 	if err != nil {
 		return fmt.Errorf("failed to remove active project reference: %w", err)
 	}
-	
+
 	// Remove project settings
 	_, err = db.conn.Exec("DELETE FROM project_settings WHERE project_id = ?", project.ID)
 	if err != nil {
 		return fmt.Errorf("failed to remove project settings: %w", err)
 	}
-	
+
 	// Remove the project itself
 	_, err = db.conn.Exec("DELETE FROM projects WHERE id = ?", project.ID)
 	if err != nil {
 		return fmt.Errorf("failed to remove project: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -241,13 +241,13 @@ func (db *Database) GetActiveProject() (*Project, error) {
 	FROM projects p
 	JOIN active_project ap ON p.id = ap.project_id
 	WHERE ap.id = 1`
-	
+
 	row := db.conn.QueryRow(query)
-	
+
 	var project Project
 	var lastOpened sql.NullTime
 	var description sql.NullString
-	
+
 	err := row.Scan(
 		&project.ID,
 		&project.Name,
@@ -256,20 +256,20 @@ func (db *Database) GetActiveProject() (*Project, error) {
 		&lastOpened,
 		&description,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("no active project set")
 	} else if err != nil {
 		return nil, fmt.Errorf("failed to get active project: %w", err)
 	}
-	
+
 	if lastOpened.Valid {
 		project.LastOpened = lastOpened.Time
 	}
 	if description.Valid {
 		project.Description = description.String
 	}
-	
+
 	return &project, nil
 }
 
