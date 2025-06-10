@@ -24,7 +24,7 @@ jobs:
         go-version: ${{ matrix.go-version }}
         
     - name: Cache Go modules
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/go-build
@@ -113,7 +113,7 @@ jobs:
         
     - name: Upload test artifacts
       if: failure()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: test-logs-go-${{ matrix.go-version }}
         path: |
@@ -148,7 +148,7 @@ jobs:
         go build -ldflags="-s -w" -o relay-${GOOS}-${GOARCH}${EXT}
         
     - name: Upload release artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: relay-${{ matrix.os }}
         path: server/relay-*
@@ -221,7 +221,7 @@ jobs:
         cat perf-results.txt
         
     - name: Upload performance results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: performance-results
         path: server/perf-results.txt
