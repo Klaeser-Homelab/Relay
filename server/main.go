@@ -1,107 +1,284 @@
 package main
 
 import (
-	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
-	"strings"
+	"path/filepath"
 )
 
-type ClaudeCLI struct {
-	logger          *log.Logger
-	useSession      bool
-	sessionStarted  bool
-}
-
-type ClaudeResponse struct {
-	Content string `json:"content"`
-	Role    string `json:"role"`
-}
-
-func NewClaudeCLI(useSession bool) (*ClaudeCLI, error) {
-	logger := log.New(os.Stdout, "[ClaudeCLI] ", log.LstdFlags)
-	
-	logger.Println("Claude CLI client initialized")
-	
-	return &ClaudeCLI{
-		logger:          logger,
-		useSession:      useSession,
-		sessionStarted:  false,
-	}, nil
-}
-
-func (c *ClaudeCLI) SendCommand(command string) (string, error) {
-	c.logger.Printf("Sending command: %s", command)
-	
-	var cmd *exec.Cmd
-	
-	if c.useSession && c.sessionStarted {
-		cmd = exec.Command("claude", "--print", "--output-format", "json", "--continue", command)
-	} else {
-		cmd = exec.Command("claude", "--print", "--output-format", "json", command)
-		if c.useSession {
-			c.sessionStarted = true
-		}
-	}
-	
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to execute claude command: %w", err)
-	}
-	
-	responseText := strings.TrimSpace(string(output))
-	c.logger.Printf("Received raw response (%d chars): %s", len(responseText), responseText)
-	
-	return c.parseResponse(responseText)
-}
-
-func (c *ClaudeCLI) parseResponse(responseText string) (string, error) {
-	if responseText == "" {
-		return "", fmt.Errorf("empty response from claude")
-	}
-	
-	// Try to parse as JSON first
-	var claudeResp ClaudeResponse
-	err := json.Unmarshal([]byte(responseText), &claudeResp)
-	if err == nil {
-		c.logger.Printf("Parsed JSON response: %s", claudeResp.Content)
-		return claudeResp.Content, nil
-	}
-	
-	// If JSON parsing fails, return raw text
-	c.logger.Printf("Using raw text response (JSON parse failed: %v)", err)
-	return responseText, nil
-}
-
-func (c *ClaudeCLI) Close() error {
-	c.logger.Println("Claude CLI client closed")
-	return nil
-}
-
-func testClaudeIntegration() string {
-	claude, err := NewClaudeCLI(true) // Enable session continuity
-	if err != nil {
-		log.Printf("Failed to create Claude CLI: %v", err)
-		return "failed"
-	}
-	defer claude.Close()
-	
-	response, err := claude.SendCommand("hello world")
-	if err != nil {
-		log.Printf("Failed to send command: %v", err)
-		return "failed"
-	}
-	
-	fmt.Printf("Claude Response:\n%s\n", response)
-	
-	return "done"
-}
-
 func main() {
-	fmt.Println("Starting Relay Server...")
+	if len(os.Args) < 2 {
+		printUsage()
+		return
+	}
 	
-	result := testClaudeIntegration()
-	fmt.Printf("Claude integration test result: %s\n", result)
+	command := os.Args[1]
+	
+	switch command {
+	case "add":
+		handleAddProject()
+	case "open":
+		handleOpenProject()
+	case "list":
+		handleListProjects()
+	case "remove":
+		handleRemoveProject()
+	case "commit":
+		handleSmartCommit()
+	case "push":
+		handleSmartPush()
+	case "commit-push":
+		handleSmartCommitPush()
+	case "status":
+		handleProjectStatus()
+	default:
+		fmt.Printf("Unknown command: %s\n", command)
+		printUsage()
+	}
+}
+
+func printUsage() {
+	fmt.Println("Relay Server - AI-powered project management")
+	fmt.Println("")
+	fmt.Println("Usage:")
+	fmt.Println("  relay add -p <path>     Add a new project")
+	fmt.Println("  relay open <name>       Open/switch to a project")
+	fmt.Println("  relay list              List all projects")
+	fmt.Println("  relay remove <name>     Remove a project")
+	fmt.Println("  relay commit            Smart commit with AI-generated message")
+	fmt.Println("  relay push              Push to current branch")
+	fmt.Println("  relay commit-push       Smart commit and push")
+	fmt.Println("  relay status            Show current project status")
+}
+
+func handleAddProject() {
+	addCmd := flag.NewFlagSet("add", flag.ExitOnError)
+	projectPath := addCmd.String("p", "", "Project path")
+	addCmd.Parse(os.Args[2:])
+	
+	if *projectPath == "" {
+		fmt.Println("Error: Project path is required. Use -p flag.")
+		return
+	}
+	
+	// Convert to absolute path
+	absPath, err := filepath.Abs(*projectPath)
+	if err != nil {
+		fmt.Printf("Error: Invalid path: %v\n", err)
+		return
+	}
+	
+	// Check if directory exists
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		fmt.Printf("Error: Directory does not exist: %s\n", absPath)
+		return
+	}
+	
+	// Extract project name from path
+	projectName := filepath.Base(absPath)
+	
+	pm, err := NewProjectManager()
+	if err != nil {
+		log.Printf("Failed to initialize project manager: %v", err)
+		return
+	}
+	defer pm.Close()
+	
+	err = pm.AddProject(projectName, absPath)
+	if err != nil {
+		fmt.Printf("Error adding project: %v\n", err)
+		return
+	}
+	
+	fmt.Printf("Successfully added project '%s' at %s\n", projectName, absPath)
+}
+
+func handleOpenProject() {
+	if len(os.Args) < 3 {
+		fmt.Println("Error: Project name is required")
+		return
+	}
+	
+	projectName := os.Args[2]
+	
+	pm, err := NewProjectManager()
+	if err != nil {
+		log.Printf("Failed to initialize project manager: %v", err)
+		return
+	}
+	defer pm.Close()
+	
+	err = pm.OpenProject(projectName)
+	if err != nil {
+		fmt.Printf("Error opening project: %v\n", err)
+		return
+	}
+	
+	fmt.Printf("Switched to project '%s'\n", projectName)
+}
+
+func handleListProjects() {
+	pm, err := NewProjectManager()
+	if err != nil {
+		log.Printf("Failed to initialize project manager: %v", err)
+		return
+	}
+	defer pm.Close()
+	
+	projects, err := pm.ListProjects()
+	if err != nil {
+		fmt.Printf("Error listing projects: %v\n", err)
+		return
+	}
+	
+	if len(projects) == 0 {
+		fmt.Println("No projects found. Use 'relay add -p <path>' to add a project.")
+		return
+	}
+	
+	currentProject, _ := pm.GetActiveProject()
+	
+	fmt.Println("Projects:")
+	for _, project := range projects {
+		marker := "  "
+		if currentProject != nil && project.Name == currentProject.Name {
+			marker = "* "
+		}
+		fmt.Printf("%s%s - %s\n", marker, project.Name, project.Path)
+	}
+}
+
+func handleRemoveProject() {
+	if len(os.Args) < 3 {
+		fmt.Println("Error: Project name is required")
+		return
+	}
+	
+	projectName := os.Args[2]
+	
+	pm, err := NewProjectManager()
+	if err != nil {
+		log.Printf("Failed to initialize project manager: %v", err)
+		return
+	}
+	defer pm.Close()
+	
+	err = pm.RemoveProject(projectName)
+	if err != nil {
+		fmt.Printf("Error removing project: %v\n", err)
+		return
+	}
+	
+	fmt.Printf("Successfully removed project '%s'\n", projectName)
+}
+
+func handleSmartCommit() {
+	pm, err := NewProjectManager()
+	if err != nil {
+		log.Printf("Failed to initialize project manager: %v", err)
+		return
+	}
+	defer pm.Close()
+	
+	project, err := pm.GetActiveProject()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		fmt.Println("Use 'relay open <project>' to select a project first")
+		return
+	}
+	
+	gitOps, err := NewGitOperations(project.Path)
+	if err != nil {
+		fmt.Printf("Error initializing git operations: %v\n", err)
+		return
+	}
+	
+	err = gitOps.SmartCommit()
+	if err != nil {
+		fmt.Printf("Error during smart commit: %v\n", err)
+		return
+	}
+	
+	fmt.Println("Smart commit completed successfully")
+}
+
+func handleSmartPush() {
+	pm, err := NewProjectManager()
+	if err != nil {
+		log.Printf("Failed to initialize project manager: %v", err)
+		return
+	}
+	defer pm.Close()
+	
+	project, err := pm.GetActiveProject()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		fmt.Println("Use 'relay open <project>' to select a project first")
+		return
+	}
+	
+	gitOps, err := NewGitOperations(project.Path)
+	if err != nil {
+		fmt.Printf("Error initializing git operations: %v\n", err)
+		return
+	}
+	
+	err = gitOps.Push("")
+	if err != nil {
+		fmt.Printf("Error during push: %v\n", err)
+		return
+	}
+	
+	fmt.Println("Push completed successfully")
+}
+
+func handleSmartCommitPush() {
+	pm, err := NewProjectManager()
+	if err != nil {
+		log.Printf("Failed to initialize project manager: %v", err)
+		return
+	}
+	defer pm.Close()
+	
+	project, err := pm.GetActiveProject()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		fmt.Println("Use 'relay open <project>' to select a project first")
+		return
+	}
+	
+	gitOps, err := NewGitOperations(project.Path)
+	if err != nil {
+		fmt.Printf("Error initializing git operations: %v\n", err)
+		return
+	}
+	
+	err = gitOps.SmartCommitAndPush()
+	if err != nil {
+		fmt.Printf("Error during smart commit and push: %v\n", err)
+		return
+	}
+	
+	fmt.Println("Smart commit and push completed successfully")
+}
+
+func handleProjectStatus() {
+	pm, err := NewProjectManager()
+	if err != nil {
+		log.Printf("Failed to initialize project manager: %v", err)
+		return
+	}
+	defer pm.Close()
+	
+	project, err := pm.GetActiveProject()
+	if err != nil {
+		fmt.Printf("No active project. Use 'relay open <project>' to select one.\n")
+		return
+	}
+	
+	fmt.Printf("Active Project: %s\n", project.Name)
+	fmt.Printf("Path: %s\n", project.Path)
+	fmt.Printf("Last Opened: %s\n", project.LastOpened.Format("2006-01-02 15:04:05"))
 }
