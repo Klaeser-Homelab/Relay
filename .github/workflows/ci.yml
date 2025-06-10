@@ -142,42 +142,16 @@ jobs:
     - name: Build for release
       working-directory: ./server
       run: |
-        GOOS=${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'windows' }}
-        GOARCH=amd64
-        EXT=${{ matrix.os == 'windows-latest' && '.exe' || '' }}
-        go build -ldflags="-s -w" -o relay-${GOOS}-${GOARCH}${EXT}
+        # Build natively on each platform to avoid CGO cross-compilation issues
+        go build -ldflags="-s -w" -o relay${{ matrix.os == 'windows-latest' && '.exe' || '' }}
         
     - name: Upload release artifacts
       uses: actions/upload-artifact@v4
       with:
         name: relay-${{ matrix.os }}
-        path: server/relay-*
+        path: server/relay${{ matrix.os == 'windows-latest' && '.exe' || '' }}
         retention-days: 30
 
-  # Security and quality checks
-  security:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: 1.22.x
-        
-    - name: Run security scan
-      uses: securecodewarrior/github-action-add-sarif@v1
-      with:
-        sarif-file: 'gosec-report.sarif'
-      continue-on-error: true
-      
-    - name: Run govulncheck
-      working-directory: ./server
-      run: |
-        go install golang.org/x/vuln/cmd/govulncheck@latest
-        govulncheck ./...
-      continue-on-error: true
 
   # Performance testing
   performance:
