@@ -21,6 +21,8 @@ func main() {
 		handleAddProject()
 	case "open":
 		handleOpenProject()
+	case "start":
+		handleStartREPL()
 	case "list":
 		handleListProjects()
 	case "remove":
@@ -45,6 +47,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  relay add -p <path>     Add a new project")
 	fmt.Println("  relay open <name>       Open/switch to a project")
+	fmt.Println("  relay start <name>      Start interactive REPL for a project")
 	fmt.Println("  relay list              List all projects")
 	fmt.Println("  relay remove <name>     Remove a project")
 	fmt.Println("  relay commit            Smart commit with AI-generated message")
@@ -281,4 +284,27 @@ func handleProjectStatus() {
 	fmt.Printf("Active Project: %s\n", project.Name)
 	fmt.Printf("Path: %s\n", project.Path)
 	fmt.Printf("Last Opened: %s\n", project.LastOpened.Format("2006-01-02 15:04:05"))
+}
+
+func handleStartREPL() {
+	if len(os.Args) < 3 {
+		fmt.Println("Error: Project name is required")
+		fmt.Println("Usage: relay start <project-name>")
+		os.Exit(1)
+	}
+
+	projectName := os.Args[2]
+
+	// Create and start REPL session
+	session, err := NewREPLSession(projectName)
+	if err != nil {
+		fmt.Printf("Error creating REPL session: %v\n", err)
+		os.Exit(1)
+	}
+
+	err = session.Start()
+	if err != nil {
+		fmt.Printf("Error running REPL session: %v\n", err)
+		os.Exit(1)
+	}
 }
