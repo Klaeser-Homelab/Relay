@@ -1,5 +1,9 @@
 # Relay
 
+[![CI Status](https://github.com/yourusername/relay/workflows/Relay%20Server%20CI/badge.svg)](https://github.com/yourusername/relay/actions)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 **Code from anywhere, control with your voice**
 
 Relay enables mobile-first software development through voice commands. Write code, manage git repositories, and execute development tasks from your phone while your development environment runs on your desktop.
@@ -159,6 +163,51 @@ Create a `relay.config.json` in your project root:
 - "Hold on, stop the current command"
 - "What's in the queue?"
 - "Clear the queue"
+
+## Development
+
+### Building from Source
+
+```bash
+git clone https://github.com/yourusername/relay
+cd relay/server
+make build
+```
+
+### Running Tests
+
+```bash
+# Run full test suite
+make test
+
+# Quick smoke test
+make smoke-test
+
+# Set up test environment
+make setup-test-project
+```
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests (`make test`)
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+### Continuous Integration
+
+Relay uses GitHub Actions for automated testing:
+
+- **Tests**: Run on every push and pull request
+- **Multiple Go versions**: Tested against Go 1.21.x and 1.22.x
+- **Cross-platform builds**: Linux, macOS, and Windows
+- **Security scanning**: Vulnerability and security checks
+- **Performance testing**: Automated performance benchmarks
+
+All tests must pass before merging to main branch.
 
 ## Security
 
