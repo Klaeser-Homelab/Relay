@@ -1,0 +1,81 @@
+# Relay Server executables
+server/relay
+server/relay.exe
+
+# Test executables
+server/test/test_runner
+server/test/test_runner.exe
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test binary, built with `go test -c`
+*.test
+
+# Go coverage files
+*.out
+coverage.html
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Local development
+.env
+.env.local
+
+# Relay data directory (optional - uncomment if you don't want to track user data)
+# .relay/
+
+# Backup files
+*.bak
+*.backup
+
+# Build directories
+build/
+dist/
+bin/
+
+# Node.js (if adding any JS tooling later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python (if adding any Python scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
