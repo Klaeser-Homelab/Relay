@@ -100,10 +100,8 @@ jobs:
       working-directory: ./server
       run: |
         # Run tests with CI-specific configuration
-        export CI_MODE=true
         export RELAY_TEST_PATH=/tmp/RelayTest
-        cd test
-        go run *.go
+        make ci-test
         
     - name: Run basic integration test
       working-directory: ./server
