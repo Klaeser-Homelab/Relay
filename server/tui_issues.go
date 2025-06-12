@@ -89,8 +89,25 @@ func (m IssueListModel) Update(msg tea.Msg) (IssueListModel, tea.Cmd) {
 			}
 			return m, SwitchToView(ViewREPL, context)
 			
+		case "o":
+			// Close issue (default to completed for now)
+			if len(m.issues) > 0 {
+				selectedIssue := m.issues[m.selected]
+				err := m.issueManager.CloseIssue(selectedIssue.ID, "completed")
+				if err != nil {
+					// Handle error
+					return m, nil
+				}
+				// Refresh issue list
+				m.issues = m.issueManager.ListIssues(m.filterStatus, m.filterLabel)
+				if m.selected >= len(m.issues) && len(m.issues) > 0 {
+					m.selected = len(m.issues) - 1
+				}
+				return m, nil
+			}
+			
 		case "d":
-			// Delete issue with confirmation
+			// Delete issue with confirmation (backward compatibility)
 			if len(m.issues) > 0 {
 				selectedIssue := m.issues[m.selected]
 				confirmData := ConfirmationData{
@@ -288,6 +305,7 @@ func (m IssueListModel) View() string {
 
 	actionOptions := []string{
 		chatStyle.Render("c") + " Chat",
+		chatStyle.Render("o") + " Close",
 		deleteStyle.Render("d") + " Delete",
 		createStyle.Render("n") + " New",
 		syncAction,
@@ -368,6 +386,9 @@ func (m IssueDetailModel) Update(msg tea.Msg) (IssueDetailModel, tea.Cmd) {
 			// Start with Claude Code shortcut
 			return m.handleOpenInClaudeCode()
 			
+		case "o":
+			// Close issue shortcut
+			return m.handleClose()
 		
 		case "d":
 			// Delete shortcut
@@ -634,6 +655,15 @@ func (m IssueDetailModel) handleDelete() (IssueDetailModel, tea.Cmd) {
 	return m, SwitchToView(ViewConfirmation, confirmData)
 }
 
+func (m IssueDetailModel) handleClose() (IssueDetailModel, tea.Cmd) {
+	// For now, default to "completed". In the future, this could show a dialog for close reason selection
+	err := m.replSession.issueManager.CloseIssue(m.issue.ID, "completed")
+	if err == nil {
+		return m, SwitchToView(ViewIssueList, nil)
+	}
+	return m, BackToPreviousView()
+}
+
 func (m IssueDetailModel) View() string {
 	var content strings.Builder
 	
@@ -691,6 +721,7 @@ func (m IssueDetailModel) View() string {
 	actionData := []string{
 		chatStyle.Render("c") + " Chat",
 		openStyle.Render("s") + " Start",
+		chatStyle.Render("o") + " Close",
 		deleteStyle.Render("d") + " Delete",
 		backStyle.Render("q") + " Back",
 	}
