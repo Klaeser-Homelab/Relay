@@ -842,7 +842,7 @@ func (r *REPLSession) handleIssueCloseToGitHub(issue *Issue, closeReason string)
 	githubPrompt := fmt.Sprintf("Close the GitHub issue for this development item using the GitHub CLI (gh). Use the following details:\n\nTitle: %s\nClose State: %s\nState Reason: %s\nClose Reason: %s\n\nFirst find the GitHub issue by title, then close it with the appropriate state and reason. If the issue doesn't exist on GitHub, just report that.", 
 		issue.Content, githubState, stateReason, closeReason)
 	
-	response, err := r.claudeCLI.SendCommand(githubPrompt)
+	response, err := r.llmManager.GetExecutingProvider().SendMessage(context.Background(), githubPrompt)
 	if err != nil {
 		return fmt.Errorf("failed to close issue on GitHub: %w", err)
 	}
