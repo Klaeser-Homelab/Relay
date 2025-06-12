@@ -171,20 +171,42 @@ Create a `relay.config.json` in your project root:
 ```bash
 git clone https://github.com/yourusername/relay
 cd relay/server
-make build
+go build -o relay .
 ```
+
+### Development with Hot Reload
+
+For faster development iterations, use Air for automatic rebuilding:
+
+```bash
+# Install Air (one-time setup)
+go install github.com/air-verse/air@latest
+
+# Start development server with hot reload
+cd server
+air
+
+# Air will automatically rebuild and restart when you modify Go files
+```
+
+Air is configured to:
+- Watch all `.go` files in the server directory
+- Exclude test files and temporary directories  
+- Automatically restart with `start Relay` arguments
+- Show colored build output and logs
 
 ### Running Tests
 
 ```bash
 # Run full test suite
-make test
+cd server
+go test ./...
 
-# Quick smoke test
-make smoke-test
+# Run tests with verbose output
+go test -v ./...
 
-# Set up test environment
-make setup-test-project
+# Run specific test
+go test -run TestSpecificFunction ./...
 ```
 
 ### Contributing

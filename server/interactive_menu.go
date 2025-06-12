@@ -16,6 +16,8 @@ const (
 	ColorYellow = "\033[33m"
 	ColorRed    = "\033[31m"
 	ColorBold   = "\033[1m"
+	ColorCyan   = "\033[36m"
+	ColorGray   = "\033[90m"
 )
 
 // ANSI control codes
@@ -26,6 +28,13 @@ const (
 	ShowCursor  = "\033[?25h"
 	CursorUp    = "\033[A"
 	CursorDown  = "\033[B"
+)
+
+// Layout constants for consistent alignment
+const (
+	LabelWidth    = 12  // Width for labels like "Title:", "Status:"
+	ActionWidth   = 2   // Width for action keys like "c", "r"
+	StatusPadding = 20  // Padding for status display
 )
 
 // MenuItem represents an item in an interactive menu
@@ -72,34 +81,37 @@ func clearScreen() {
 	fmt.Print(ClearScreen + CursorHome)
 }
 
-// Display renders the menu
+// Display renders the menu with proper column alignment
 func (m *InteractiveMenu) Display() {
 	clearScreen()
 	fmt.Print(HideCursor)
 	
-	// Title
-	fmt.Printf("%s%s%s\n\n", ColorBold, m.title, ColorReset)
+	// Title section with consistent formatting
+	fmt.Printf("%s%s%s\n", ColorBold, m.title, ColorReset)
+	fmt.Printf("%s\n\n", strings.Repeat("=", len(m.title)))
 	
-	// Menu items
+	// Menu items with consistent left alignment and selection indicator
 	for i, item := range m.items {
-		prefix := "  "
-		color := ""
-		
 		if i == m.selectedIdx {
-			prefix = "> "
-			color = ColorBlue
+			// Selected item with clear visual indicator
+			fmt.Printf("%s> %s%s\n", 
+				ColorBlue, 
+				item.Content,
+				ColorReset)
+		} else {
+			// Unselected item with consistent spacing
+			fmt.Printf("  %s\n", item.Content)
 		}
-		
-		fmt.Printf("%s%s%s%s%s\n", prefix, color, item.Content, ColorReset, "")
 	}
 	
-	// Help text
+	// Help section with aligned columns
 	if m.showHelp {
 		fmt.Printf("\n%sControls:%s\n", ColorBold, ColorReset)
-		fmt.Printf("  ↑/↓  Navigate\n")
-		fmt.Printf("  Enter Select item\n")
-		fmt.Printf("  d     Delete item\n")
-		fmt.Printf("  q     Quit\n")
+		fmt.Printf("%s\n", strings.Repeat("-", 9))
+		fmt.Printf("%-8s %s\n", "↑/↓", "Navigate")
+		fmt.Printf("%-8s %s\n", "Enter", "Select item")
+		fmt.Printf("%-8s %s\n", "d", "Delete item")
+		fmt.Printf("%-8s %s\n", "q", "Quit")
 	}
 }
 
@@ -200,28 +212,73 @@ func NewIssueActionMenu(issue *Issue) *IssueActionMenu {
 	return &IssueActionMenu{issue: issue}
 }
 
-// Display renders the issue action menu
+// getStatusDisplay returns a clean text representation of status
+func getStatusDisplay(status string) string {
+	switch strings.ToLower(status) {
+	case "captured":
+		return ColorGreen + "[CAPTURED]" + ColorReset
+	case "in-progress":
+		return ColorYellow + "[IN-PROGRESS]" + ColorReset
+	case "done":
+		return ColorBlue + "[DONE]" + ColorReset
+	case "archived":
+		return ColorCyan + "[ARCHIVED]" + ColorReset
+	default:
+		return ColorCyan + "[" + strings.ToUpper(status) + "]" + ColorReset
+	}
+}
+
+// getLabelsDisplay returns a clean text representation of labels
+func getLabelsDisplay(labels []string) string {
+	if len(labels) == 0 {
+		return "" // Return empty string instead of "[no labels]"
+	}
+	
+	var displayLabels []string
+	for _, label := range labels {
+		switch strings.ToLower(label) {
+		case "enhancement":
+			displayLabels = append(displayLabels, ColorGreen + "[ENHANCEMENT]" + ColorReset)
+		case "bug":
+			displayLabels = append(displayLabels, ColorRed + "[BUG]" + ColorReset)
+		default:
+			displayLabels = append(displayLabels, ColorCyan + "[" + strings.ToUpper(label) + "]" + ColorReset)
+		}
+	}
+	
+	return strings.Join(displayLabels, " ")
+}
+
+// Display renders the issue action menu with perfect column alignment
 func (m *IssueActionMenu) Display() {
 	clearScreen()
 	fmt.Print(HideCursor)
 	
-	// Issue details
-	statusEmoji := getStatusEmoji(m.issue.Status)
-	categoryEmoji := getCategoryEmoji(m.issue.Category)
+	// Header section
+	fmt.Printf("%sIssue #%d%s\n", ColorBold, m.issue.ID, ColorReset)
+	fmt.Printf("%s\n\n", strings.Repeat("=", 15))
 	
-	fmt.Printf("%sIssue: %s%s\n\n", ColorBold, m.issue.Content, ColorReset)
-	fmt.Printf("ID: #%d\n", m.issue.ID)
-	fmt.Printf("Status: %s %s\n", statusEmoji, m.issue.Status)
-	fmt.Printf("Category: %s %s\n", categoryEmoji, m.issue.Category)
-	fmt.Printf("Created: %s\n", formatRelativeTime(m.issue.Timestamp))
+	// Issue details with fixed-width left column for labels
+	fmt.Printf("%-*s %s\n", LabelWidth, "Title:", m.issue.Content)
+	fmt.Printf("%-*s %s\n", LabelWidth, "Status:", getStatusDisplay(m.issue.Status))
 	
-	// Action menu
+	// Only show labels line if labels exist
+	if len(m.issue.Labels) > 0 {
+		fmt.Printf("%-*s %s\n", LabelWidth, "Labels:", getLabelsDisplay(m.issue.Labels))
+	}
+	
+	fmt.Printf("%-*s %s\n", LabelWidth, "Created:", formatRelativeTime(m.issue.Timestamp))
+	
+	// Actions section with aligned columns
 	fmt.Printf("\n%sActions:%s\n", ColorBold, ColorReset)
-	fmt.Printf("  %sc%s  Chat about this issue with Claude\n", ColorGreen, ColorReset)
-	fmt.Printf("  %sr%s  Rename this issue\n", ColorYellow, ColorReset)
-	fmt.Printf("  %sd%s  Delete this issue\n", ColorRed, ColorReset)
-	fmt.Printf("  %sp%s  Push this issue to GitHub\n", ColorBlue, ColorReset)
-	fmt.Printf("  %sq%s  Back to issue list\n", ColorReset, ColorReset)
+	fmt.Printf("%s\n", strings.Repeat("-", 8))
+	
+	// Action menu items with consistent key/description alignment
+	fmt.Printf("%-*s %s\n", ActionWidth+1, "c", "Chat about this issue with Claude")
+	fmt.Printf("%-*s %s\n", ActionWidth+1, "r", "Rename this issue")
+	fmt.Printf("%-*s %s\n", ActionWidth+1, "d", "Delete this issue")
+	fmt.Printf("%-*s %s\n", ActionWidth+1, "p", "Push this issue to GitHub")
+	fmt.Printf("%-*s %s\n", ActionWidth+1, "q", "Back to issue list")
 }
 
 // Run starts the issue action menu loop
@@ -277,3 +334,4 @@ func TextInput(prompt string) (string, error) {
 	
 	return strings.TrimSpace(input), nil
 }
+

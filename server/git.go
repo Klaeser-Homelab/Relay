@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -8,22 +9,16 @@ import (
 
 type GitOperations struct {
 	projectPath string
-	claude      *ClaudeCLI
+	llmProvider LLMProvider
 	logger      *log.Logger
 }
 
-func NewGitOperations(projectPath string) (*GitOperations, error) {
+func NewGitOperations(projectPath string, llmProvider LLMProvider) (*GitOperations, error) {
 	logger := log.New(os.Stdout, "[GitOps] ", log.LstdFlags)
-
-	// Initialize Claude CLI for this project
-	claude, err := NewClaudeCLI(false, projectPath) // Don't use session for git operations
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Claude CLI: %w", err)
-	}
 
 	return &GitOperations{
 		projectPath: projectPath,
-		claude:      claude,
+		llmProvider: llmProvider,
 		logger:      logger,
 	}, nil
 }
@@ -44,7 +39,7 @@ func (g *GitOperations) SmartCommit() error {
 	
 	Do not ask for confirmation - proceed with the commit.`
 
-	response, err := g.claude.SendCommand(command)
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {
 		return fmt.Errorf("failed to execute smart commit via Claude: %w", err)
 	}
@@ -65,7 +60,7 @@ func (g *GitOperations) Push(branch string) error {
 		command = fmt.Sprintf("Push the current branch to the remote repository on branch '%s'.", branch)
 	}
 
-	response, err := g.claude.SendCommand(command)
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {
 		return fmt.Errorf("failed to execute push via Claude: %w", err)
 	}
@@ -93,7 +88,7 @@ func (g *GitOperations) SmartCommitAndPush() error {
 	
 	Do not ask for confirmation - proceed with the commit and push.`
 
-	response, err := g.claude.SendCommand(command)
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {
 		return fmt.Errorf("failed to execute smart commit and push via Claude: %w", err)
 	}
@@ -117,7 +112,7 @@ func (g *GitOperations) AnalyzeChanges() (string, error) {
 	
 	Do not make any commits - just analyze and report.`
 
-	response, err := g.claude.SendCommand(command)
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {
 		return "", fmt.Errorf("failed to analyze changes via Claude: %w", err)
 	}
@@ -132,7 +127,7 @@ func (g *GitOperations) Status() (string, error) {
 
 	command := "Show me the current git status and a brief summary of any changes."
 
-	response, err := g.claude.SendCommand(command)
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {
 		return "", fmt.Errorf("failed to get git status via Claude: %w", err)
 	}
@@ -145,7 +140,7 @@ func (g *GitOperations) CreateBranch(branchName string) error {
 
 	command := fmt.Sprintf("Create a new git branch called '%s' and switch to it.", branchName)
 
-	response, err := g.claude.SendCommand(command)
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {
 		return fmt.Errorf("failed to create branch via Claude: %w", err)
 	}
@@ -161,7 +156,7 @@ func (g *GitOperations) SwitchBranch(branchName string) error {
 
 	command := fmt.Sprintf("Switch to git branch '%s'.", branchName)
 
-	response, err := g.claude.SendCommand(command)
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {
 		return fmt.Errorf("failed to switch branch via Claude: %w", err)
 	}
@@ -177,7 +172,7 @@ func (g *GitOperations) ListBranches() (string, error) {
 
 	command := "List all git branches (local and remote) and show which one is currently active."
 
-	response, err := g.claude.SendCommand(command)
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {
 		return "", fmt.Errorf("failed to list branches via Claude: %w", err)
 	}
@@ -195,7 +190,7 @@ func (g *GitOperations) ShowLog(limit int) (string, error) {
 		command = "Show recent git commits with their messages and authors."
 	}
 
-	response, err := g.claude.SendCommand(command)
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {
 		return "", fmt.Errorf("failed to get git log via Claude: %w", err)
 	}
@@ -208,7 +203,7 @@ func (g *GitOperations) UndoLastCommit() error {
 
 	command := "Undo the last git commit while keeping the changes in the working directory (soft reset)."
 
-	response, err := g.claude.SendCommand(command)
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {
 		return fmt.Errorf("failed to undo last commit via Claude: %w", err)
 	}
@@ -220,8 +215,8 @@ func (g *GitOperations) UndoLastCommit() error {
 }
 
 func (g *GitOperations) Close() error {
-	if g.claude != nil {
-		return g.claude.Close()
+	if g.llmProvider != nil {
+		return g.llmProvider.Close()
 	}
 	return nil
 }

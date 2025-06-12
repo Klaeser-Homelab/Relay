@@ -1,0 +1,38 @@
+[
+  {
+    "id": 1,
+    "content": "Test issue",
+    "timestamp": "2025-06-11T10:08:40.737622-07:00",
+    "status": "captured",
+    "labels": ["enhancement"],
+    "prompt": "",
+    "sync_status": "Synced",
+    "github_id": 1,
+    "github_url": "https://github.com/rklaeser/Relay/issues/1",
+    "last_synced_at": "2025-06-11T10:08:40.737615-07:00"
+  },
+  {
+    "id": 2,
+    "content": "Add sync functionality to TUI",
+    "timestamp": "2025-06-11T10:20:00-07:00",
+    "status": "done",
+    "labels": ["enhancement"],
+    "prompt": "",
+    "sync_status": "Synced",
+    "github_id": 3,
+    "github_url": "https://github.com/rklaeser/Relay/issues/3",
+    "last_synced_at": "2025-06-11T10:15:55.42825-07:00"
+  },
+  {
+    "id": 3,
+    "content": "Fix critical bug in authentication",
+    "timestamp": "2025-06-11T10:25:00-07:00",
+    "status": "in-progress",
+    "labels": ["bug"],
+    "prompt": "",
+    "sync_status": "Synced",
+    "github_id": null,
+    "github_url": "",
+    "last_synced_at": null
+  }
+]

@@ -17,8 +17,8 @@ type ClaudeCLI struct {
 }
 
 type ClaudeResponse struct {
-	Content string `json:"content"`
-	Role    string `json:"role"`
+	Result string `json:"result"`
+	Type   string `json:"type"`
 }
 
 func NewClaudeCLI(useSession bool, workingDir string) (*ClaudeCLI, error) {
@@ -77,8 +77,8 @@ func (c *ClaudeCLI) parseResponse(responseText string) (string, error) {
 	var claudeResp ClaudeResponse
 	err := json.Unmarshal([]byte(responseText), &claudeResp)
 	if err == nil {
-		c.logger.Printf("Parsed JSON response: %s", claudeResp.Content)
-		return claudeResp.Content, nil
+		c.logger.Printf("Parsed JSON response: %s", claudeResp.Result)
+		return claudeResp.Result, nil
 	}
 
 	// If JSON parsing fails, return raw text

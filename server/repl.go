@@ -2,18 +2,22 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"strings"
+	
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type REPLSession struct {
 	currentProject *Project
 	projectManager *ProjectManager
-	claudeCLI      *ClaudeCLI
+	llmManager     *LLMManager
 	gitOps         *GitOperations
 	issueManager   *IssueManager
+	configManager  *ConfigManager
 	running        bool
 	logger         *log.Logger
 }
@@ -42,17 +46,25 @@ func NewREPLSession(projectName string) (*REPLSession, error) {
 		return nil, fmt.Errorf("failed to open project '%s': %w", projectName, err)
 	}
 
-	// Initialize Claude CLI for this project
-	claudeCLI, err := NewClaudeCLI(true, project.Path) // Use session mode for REPL
+	// Initialize Config Manager first to get LLM settings
+	configManager, err := NewConfigManager(project.Path)
 	if err != nil {
 		pm.Close()
-		return nil, fmt.Errorf("failed to initialize Claude CLI: %w", err)
+		return nil, fmt.Errorf("failed to initialize config manager: %w", err)
+	}
+
+	// Initialize LLM Manager with current configuration
+	config := configManager.GetConfig()
+	llmManager, err := NewLLMManager(config.LLMs.Planning, config.LLMs.Executing, project.Path)
+	if err != nil {
+		pm.Close()
+		return nil, fmt.Errorf("failed to initialize LLM manager: %w", err)
 	}
 
 	// Initialize Git operations
-	gitOps, err := NewGitOperations(project.Path)
+	gitOps, err := NewGitOperations(project.Path, llmManager.GetExecutingProvider())
 	if err != nil {
-		claudeCLI.Close()
+		llmManager.Close()
 		pm.Close()
 		return nil, fmt.Errorf("failed to initialize git operations: %w", err)
 	}
@@ -61,7 +73,7 @@ func NewREPLSession(projectName string) (*REPLSession, error) {
 	issueManager, err := NewIssueManager(project.Path)
 	if err != nil {
 		gitOps.Close()
-		claudeCLI.Close()
+		llmManager.Close()
 		pm.Close()
 		return nil, fmt.Errorf("failed to initialize issue manager: %w", err)
 	}
@@ -69,16 +81,31 @@ func NewREPLSession(projectName string) (*REPLSession, error) {
 	return &REPLSession{
 		currentProject: project,
 		projectManager: pm,
-		claudeCLI:      claudeCLI,
+		llmManager:     llmManager,
 		gitOps:         gitOps,
 		issueManager:   issueManager,
+		configManager:  configManager,
 		running:        true,
 		logger:         logger,
 	}, nil
 }
 
-// Start begins the REPL loop
+// Start begins the REPL loop using Bubble Tea TUI
 func (r *REPLSession) Start() error {
+	defer r.Close()
+
+	// Initialize Bubble Tea TUI
+	model := InitTUI(r)
+	
+	// Start the Bubble Tea program
+	program := tea.NewProgram(model, tea.WithAltScreen())
+	
+	_, err := program.Run()
+	return err
+}
+
+// StartLegacy begins the old REPL loop (kept for reference)
+func (r *REPLSession) StartLegacy() error {
 	defer r.Close()
 
 	// Print welcome message
@@ -176,7 +203,7 @@ func (r *REPLSession) handleREPLCommand(input string) error {
 func (r *REPLSession) handleClaudeCommand(input string) error {
 	fmt.Printf("🤖 Sending to Claude: %s\n", input)
 	
-	response, err := r.claudeCLI.SendCommand(input)
+	response, err := r.llmManager.GetExecutingProvider().SendMessage(context.Background(), input)
 	if err != nil {
 		return fmt.Errorf("Claude error: %w", err)
 	}
@@ -192,7 +219,7 @@ func (r *REPLSession) handleStatus() error {
 	fmt.Printf("Last Opened: %s\n", r.currentProject.LastOpened.Format("2006-01-02 15:04:05"))
 
 	// Get git status through Claude
-	response, err := r.claudeCLI.SendCommand("Show me the current git status and a brief summary of any changes.")
+	response, err := r.llmManager.GetExecutingProvider().SendMessage(context.Background(), "Show me the current git status and a brief summary of any changes.")
 	if err != nil {
 		return fmt.Errorf("failed to get git status: %w", err)
 	}
@@ -255,12 +282,17 @@ func (r *REPLSession) handleSwitchProject(projectName string) error {
 	// Update current project reference
 	r.currentProject = newProject
 
-	// Update Claude CLI working directory
-	r.claudeCLI.workingDir = newProject.Path
+	// Reinitialize LLM Manager with new working directory
+	r.llmManager.Close()
+	config := r.configManager.GetConfig()
+	r.llmManager, err = NewLLMManager(config.LLMs.Planning, config.LLMs.Executing, newProject.Path)
+	if err != nil {
+		return fmt.Errorf("failed to initialize LLM manager for new project: %w", err)
+	}
 
 	// Update Git operations
 	r.gitOps.Close()
-	r.gitOps, err = NewGitOperations(newProject.Path)
+	r.gitOps, err = NewGitOperations(newProject.Path, r.llmManager.GetExecutingProvider())
 	if err != nil {
 		return fmt.Errorf("failed to initialize git operations for new project: %w", err)
 	}
@@ -369,14 +401,20 @@ func (r *REPLSession) handleAddIssue(content string) error {
 		return fmt.Errorf("failed to add issue: %w", err)
 	}
 
-	categoryEmoji := getCategoryEmoji(issue.Category)
-	fmt.Printf("📋 Issue #%d captured: \"%s\" %s [%s]\n", issue.ID, issue.Content, categoryEmoji, issue.Category)
+	var issueMsg string
+	if len(issue.Labels) > 0 {
+		labelsStr := strings.Join(issue.Labels, ", ")
+		issueMsg = fmt.Sprintf("📋 Issue #%d captured: \"%s\" [%s]\n", issue.ID, issue.Content, labelsStr)
+	} else {
+		issueMsg = fmt.Sprintf("📋 Issue #%d captured: \"%s\"\n", issue.ID, issue.Content)
+	}
+	fmt.Print(issueMsg)
 	return nil
 }
 
 // handleListIssues displays an interactive list of issues
 func (r *REPLSession) handleListIssues(parts []string) error {
-	var filterStatus, filterCategory string
+	var filterStatus, filterLabel string
 
 	// Parse optional filters
 	for i := 1; i < len(parts); i++ {
@@ -387,16 +425,16 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 				filterStatus = parts[i+1]
 				i++ // Skip next argument
 			case "category":
-				filterCategory = parts[i+1]
+				filterLabel = parts[i+1]
 				i++ // Skip next argument
 			}
 		}
 	}
 
-	issues := r.issueManager.ListIssues(filterStatus, filterCategory)
+	issues := r.issueManager.ListIssues(filterStatus, filterLabel)
 	
 	if len(issues) == 0 {
-		if filterStatus != "" || filterCategory != "" {
+		if filterStatus != "" || filterLabel != "" {
 			fmt.Println("No issues found matching the specified filters.")
 		} else {
 			fmt.Println("No issues found. Use '/issue <content>' to add your first issue!")
@@ -410,9 +448,15 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 		statusEmoji := getStatusEmoji(issue.Status)
 		relativeTime := formatRelativeTime(issue.Timestamp)
 		
-		// Format: "#1 🔄 Add Redis caching [feature] (in-progress) - 2m ago"
-		content := fmt.Sprintf("#%d %s %s [%s] (%s) - %s",
-			issue.ID, statusEmoji, issue.Content, issue.Category, issue.Status, relativeTime)
+		// Format with labels only if they exist
+		var content string
+		if len(issue.Labels) > 0 {
+			content = fmt.Sprintf("#%-2d %s %s [%s] (%s) - %s",
+				issue.ID, statusEmoji, issue.Content, strings.Join(issue.Labels, ","), issue.Status, relativeTime)
+		} else {
+			content = fmt.Sprintf("#%-2d %s %s (%s) - %s",
+				issue.ID, statusEmoji, issue.Content, issue.Status, relativeTime)
+		}
 			
 		menuItems = append(menuItems, MenuItem{
 			ID:      issue.ID,
@@ -455,7 +499,7 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 				SetSttyCooked()
 			}
 			// Refresh the issue list after actions
-			issues = r.issueManager.ListIssues(filterStatus, filterCategory)
+			issues = r.issueManager.ListIssues(filterStatus, filterLabel)
 			if len(issues) == 0 {
 				fmt.Println("No issues remaining.")
 				return nil
@@ -467,8 +511,14 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 				// categoryEmoji removed
 				relativeTime := formatRelativeTime(issue.Timestamp)
 				
-				content := fmt.Sprintf("#%d %s %s [%s] (%s) - %s",
-					issue.ID, statusEmoji, issue.Content, issue.Category, issue.Status, relativeTime)
+				var content string
+				if len(issue.Labels) > 0 {
+					content = fmt.Sprintf("#%-2d %s %s [%s] (%s) - %s",
+						issue.ID, statusEmoji, issue.Content, strings.Join(issue.Labels, ","), issue.Status, relativeTime)
+				} else {
+					content = fmt.Sprintf("#%-2d %s %s (%s) - %s",
+						issue.ID, statusEmoji, issue.Content, issue.Status, relativeTime)
+				}
 					
 				menuItems = append(menuItems, MenuItem{
 					ID:      issue.ID,
@@ -503,7 +553,7 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 				}
 				
 				// Refresh the issue list
-				issues = r.issueManager.ListIssues(filterStatus, filterCategory)
+				issues = r.issueManager.ListIssues(filterStatus, filterLabel)
 				if len(issues) == 0 {
 					fmt.Println("No issues remaining.")
 					return nil
@@ -514,8 +564,14 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 					statusEmoji := getStatusEmoji(issue.Status)
 					relativeTime := formatRelativeTime(issue.Timestamp)
 					
-					content := fmt.Sprintf("#%d %s %s [%s] (%s) - %s",
-						issue.ID, statusEmoji, issue.Content, issue.Category, issue.Status, relativeTime)
+					var content string
+					if len(issue.Labels) > 0 {
+						content = fmt.Sprintf("#%-2d %s %s [%s] (%s) - %s",
+							issue.ID, statusEmoji, issue.Content, strings.Join(issue.Labels, ","), issue.Status, relativeTime)
+					} else {
+						content = fmt.Sprintf("#%-2d %s %s (%s) - %s",
+							issue.ID, statusEmoji, issue.Content, issue.Status, relativeTime)
+					}
 						
 					menuItems = append(menuItems, MenuItem{
 						ID:      issue.ID,
@@ -599,16 +655,26 @@ func (r *REPLSession) handleIssueChatWithClaude(issue *Issue) error {
 	clearScreen()
 	
 	fmt.Printf("%sChat about Issue #%d: %s%s\n", ColorBold, issue.ID, issue.Content, ColorReset)
-	fmt.Printf("Status: %s %s | Category: %s %s\n\n", 
-		getStatusEmoji(issue.Status), issue.Status,
-		getCategoryEmoji(issue.Category), issue.Category)
+	if len(issue.Labels) > 0 {
+		fmt.Printf("Status: %s %s | Labels: %s\n\n", 
+			getStatusEmoji(issue.Status), issue.Status, strings.Join(issue.Labels, ","))
+	} else {
+		fmt.Printf("Status: %s %s\n\n", 
+			getStatusEmoji(issue.Status), issue.Status)
+	}
 	
 	// Start context with issue information
-	contextPrompt := fmt.Sprintf("I want to discuss this development issue:\n\nIssue: %s\nStatus: %s\nCategory: %s\n\nPlease help me think through this issue. What would you like to discuss about it?", 
-		issue.Content, issue.Status, issue.Category)
+	var contextPrompt string
+	if len(issue.Labels) > 0 {
+		contextPrompt = fmt.Sprintf("I want to discuss this development issue:\n\nIssue: %s\nStatus: %s\nLabels: %s\n\nPlease help me think through this issue. What would you like to discuss about it?", 
+			issue.Content, issue.Status, strings.Join(issue.Labels, ","))
+	} else {
+		contextPrompt = fmt.Sprintf("I want to discuss this development issue:\n\nIssue: %s\nStatus: %s\n\nPlease help me think through this issue. What would you like to discuss about it?", 
+			issue.Content, issue.Status)
+	}
 	
 	// Send initial context to Claude
-	response, err := r.claudeCLI.SendCommand(contextPrompt)
+	response, err := r.llmManager.GetPlanningProvider().SendMessage(context.Background(), contextPrompt)
 	if err != nil {
 		return fmt.Errorf("failed to start chat with Claude: %w", err)
 	}
@@ -635,7 +701,7 @@ func (r *REPLSession) handleIssueChatWithClaude(issue *Issue) error {
 		}
 		
 		// Send to Claude
-		response, err := r.claudeCLI.SendCommand(input)
+		response, err := r.llmManager.GetExecutingProvider().SendMessage(context.Background(), input)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			continue
@@ -672,7 +738,7 @@ func (r *REPLSession) handleIssueRename(issue *Issue) error {
 	
 	// Update the issue struct with new content
 	issue.Content = newContent
-	issue.Category = categorizeIssue(newContent) // Re-categorize
+	issue.Labels = categorizeIssue(newContent) // Re-categorize
 	
 	fmt.Printf("✅ Issue #%d renamed to: \"%s\"\n", issue.ID, newContent)
 	fmt.Println("Press any key to continue...")
@@ -691,10 +757,16 @@ func (r *REPLSession) handleIssuePushToGitHub(issue *Issue) error {
 	fmt.Printf("%sPushing Issue #%d to GitHub...%s\n", ColorYellow, issue.ID, ColorReset)
 	
 	// Create GitHub issue via Claude
-	githubPrompt := fmt.Sprintf("Create a GitHub issue for this development item. Use the GitHub CLI (gh) to create the issue.\n\nTitle: %s\nCategory: %s\nStatus: %s\n\nPlease create the issue and provide the issue URL.", 
-		issue.Content, issue.Category, issue.Status)
+	var githubPrompt string
+	if len(issue.Labels) > 0 {
+		githubPrompt = fmt.Sprintf("Create a GitHub issue for this development item. Use the GitHub CLI (gh) to create the issue.\n\nTitle: %s\nLabels: %s\nStatus: %s\n\nPlease create the issue and provide the issue URL.", 
+			issue.Content, strings.Join(issue.Labels, ","), issue.Status)
+	} else {
+		githubPrompt = fmt.Sprintf("Create a GitHub issue for this development item. Use the GitHub CLI (gh) to create the issue.\n\nTitle: %s\nStatus: %s\n\nPlease create the issue and provide the issue URL.", 
+			issue.Content, issue.Status)
+	}
 	
-	response, err := r.claudeCLI.SendCommand(githubPrompt)
+	response, err := r.llmManager.GetExecutingProvider().SendMessage(context.Background(), githubPrompt)
 	if err != nil {
 		return fmt.Errorf("failed to push to GitHub: %w", err)
 	}
@@ -788,9 +860,9 @@ func (r *REPLSession) Close() error {
 		}
 	}
 
-	if r.claudeCLI != nil {
-		if err := r.claudeCLI.Close(); err != nil {
-			errors = append(errors, fmt.Errorf("claude CLI close error: %w", err))
+	if r.llmManager != nil {
+		if err := r.llmManager.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("LLM manager close error: %w", err))
 		}
 	}
 

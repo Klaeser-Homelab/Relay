@@ -35,6 +35,8 @@ func main() {
 		handleSmartCommitPush()
 	case "status":
 		handleProjectStatus()
+	case "sync":
+		handleGitHubSync()
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printUsage()
@@ -192,7 +194,15 @@ func handleSmartCommit() {
 		os.Exit(1)
 	}
 
-	gitOps, err := NewGitOperations(project.Path)
+	// Create a temporary CLI provider for git operations
+	llmProvider, err := NewClaudeCLIProvider(project.Path)
+	if err != nil {
+		fmt.Printf("Error initializing LLM provider: %v\n", err)
+		os.Exit(1)
+	}
+	defer llmProvider.Close()
+
+	gitOps, err := NewGitOperations(project.Path, llmProvider)
 	if err != nil {
 		fmt.Printf("Error initializing git operations: %v\n", err)
 		os.Exit(1)
@@ -222,7 +232,15 @@ func handleSmartPush() {
 		os.Exit(1)
 	}
 
-	gitOps, err := NewGitOperations(project.Path)
+	// Create a temporary CLI provider for git operations
+	llmProvider, err := NewClaudeCLIProvider(project.Path)
+	if err != nil {
+		fmt.Printf("Error initializing LLM provider: %v\n", err)
+		os.Exit(1)
+	}
+	defer llmProvider.Close()
+
+	gitOps, err := NewGitOperations(project.Path, llmProvider)
 	if err != nil {
 		fmt.Printf("Error initializing git operations: %v\n", err)
 		os.Exit(1)
@@ -252,7 +270,15 @@ func handleSmartCommitPush() {
 		os.Exit(1)
 	}
 
-	gitOps, err := NewGitOperations(project.Path)
+	// Create a temporary CLI provider for git operations
+	llmProvider, err := NewClaudeCLIProvider(project.Path)
+	if err != nil {
+		fmt.Printf("Error initializing LLM provider: %v\n", err)
+		os.Exit(1)
+	}
+	defer llmProvider.Close()
+
+	gitOps, err := NewGitOperations(project.Path, llmProvider)
 	if err != nil {
 		fmt.Printf("Error initializing git operations: %v\n", err)
 		os.Exit(1)
@@ -306,5 +332,99 @@ func handleStartREPL() {
 	if err != nil {
 		fmt.Printf("Error running REPL session: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func handleGitHubSync() {
+	if len(os.Args) < 3 {
+		fmt.Println("Error: Project name is required")
+		fmt.Println("Usage: relay sync <project-name> [pull|push|bidirectional]")
+		os.Exit(1)
+	}
+
+	projectName := os.Args[2]
+	syncDirection := "bidirectional"
+	if len(os.Args) >= 4 {
+		syncDirection = os.Args[3]
+	}
+
+	// Get current working directory
+	projectPath, err := os.Getwd()
+	if err != nil {
+		fmt.Printf("Error getting working directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create managers
+	configManager, err := NewConfigManager(projectPath)
+	if err != nil {
+		fmt.Printf("Error creating config manager: %v\n", err)
+		os.Exit(1)
+	}
+
+	issueManager, err := NewIssueManager(projectPath)
+	if err != nil {
+		fmt.Printf("Error creating issue manager: %v\n", err)
+		os.Exit(1)
+	}
+
+	githubService := NewGitHubService(configManager, projectPath)
+	syncManager := NewGitHubSyncManager(issueManager, githubService, configManager)
+
+	// Auto-detect and configure GitHub repository if not set
+	githubConfig := configManager.GetGitHubConfig()
+	if githubConfig.Repository == "" {
+		fmt.Print("Detecting GitHub repository... ")
+		repo, err := githubService.DetectRepository()
+		if err != nil {
+			fmt.Printf("Failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Found: %s\n", repo)
+
+		err = configManager.UpdateGitHubRepository(repo)
+		if err != nil {
+			fmt.Printf("Error updating repository config: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	fmt.Printf("Starting %s sync for project '%s'...\n", syncDirection, projectName)
+
+	var result *SyncResult
+	switch syncDirection {
+	case "pull":
+		result, err = syncManager.SyncPull()
+	case "push":
+		result, err = syncManager.SyncPush()
+	case "bidirectional":
+		result, err = syncManager.SyncBidirectional()
+	default:
+		fmt.Printf("Invalid sync direction: %s. Use 'pull', 'push', or 'bidirectional'\n", syncDirection)
+		os.Exit(1)
+	}
+
+	if err != nil {
+		fmt.Printf("Sync failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Print results
+	fmt.Printf("\n=== Sync Complete ===\n")
+	fmt.Printf("Success: %t\n", result.Success)
+	fmt.Printf("Created Local: %d\n", result.CreatedLocal)
+	fmt.Printf("Created GitHub: %d\n", result.CreatedGitHub)
+	fmt.Printf("Updated Local: %d\n", result.UpdatedLocal)
+	fmt.Printf("Updated GitHub: %d\n", result.UpdatedGitHub)
+
+	if len(result.Errors) > 0 {
+		fmt.Printf("\nErrors (%d):\n", len(result.Errors))
+		for _, err := range result.Errors {
+			fmt.Printf("  - %s\n", err)
+		}
+	}
+
+	if result.ConflictsFound > 0 {
+		fmt.Printf("\nConflicts Found: %d\n", result.ConflictsFound)
 	}
 }

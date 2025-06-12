@@ -1,0 +1,16 @@
+{
+  "issue_tracker": {
+    "provider": "github",
+    "github": {
+      "repository": "rklaeser/Relay",
+      "sync_direction": "bidirectional",
+      "auto_sync": false,
+      "sync_interval": 0,
+      "last_synced_at": "2025-06-11T10:15:55-07:00"
+    }
+  },
+  "llms": {
+    "planning": "claude",
+    "executing": "claude"
+  }
+}

@@ -1,0 +1,154 @@
+[
+  {
+    "id": 1,
+    "content": "Create abstracted LLM Provider",
+    "timestamp": "2025-06-10T16:34:41.293457-07:00",
+    "status": "captured",
+    "labels": [
+      "enhancement"
+    ],
+    "prompt": "",
+    "sync_status": "Synced",
+    "github_id": 4,
+    "github_url": "https://github.com/rklaeser/Relay/issues/4",
+    "last_synced_at": "2025-06-11T10:42:09.134228-07:00"
+  },
+  {
+    "id": 2,
+    "content": "/config page",
+    "timestamp": "2025-06-10T16:46:12.964278-07:00",
+    "status": "captured",
+    "labels": [
+      "enhancement"
+    ],
+    "prompt": "**Custom Prompt:**\nCreate a /config option that takes you to an interactive menu where Issue Tracker and LLMs options. If you select LLMs there is a planning and Executing options and you can select one and hit edit. By default both are set to Claude. If you hit Issue Trackerthe only option is GitHub.",
+    "sync_status": "Synced",
+    "github_id": 5,
+    "github_url": "https://github.com/rklaeser/Relay/issues/5",
+    "last_synced_at": "2025-06-11T14:25:34.245072-07:00"
+  },
+  {
+    "id": 3,
+    "content": "Fetch Issues",
+    "timestamp": "2025-06-10T16:51:10.490954-07:00",
+    "status": "captured",
+    "labels": [
+      "bug",
+      "enhancement"
+    ],
+    "prompt": "Fetch issues that are assigned to you from GitHub.",
+    "sync_status": "Synced",
+    "github_id": 6,
+    "github_url": "https://github.com/rklaeser/Relay/issues/6",
+    "last_synced_at": "2025-06-11T10:42:09.134228-07:00"
+  },
+  {
+    "id": 4,
+    "content": "Figure out TUI vs server output",
+    "timestamp": "2025-06-10T16:53:38.184445-07:00",
+    "status": "captured",
+    "labels": [
+      "enhancement"
+    ],
+    "prompt": "Relay Mobile will likely be bessed serverd by JSON output vs RelayServr TUI mode. Probaly need a ./relay server option",
+    "sync_status": "Synced",
+    "github_id": 7,
+    "github_url": "https://github.com/rklaeser/Relay/issues/7",
+    "last_synced_at": "2025-06-11T10:42:09.134228-07:00"
+  },
+  {
+    "id": 5,
+    "content": "Create interrupt for LLM calls in REPL",
+    "timestamp": "2025-06-10T16:54:24.332431-07:00",
+    "status": "captured",
+    "labels": [
+      "enhancement"
+    ],
+    "prompt": "",
+    "sync_status": "Synced",
+    "github_id": 8,
+    "github_url": "https://github.com/rklaeser/Relay/issues/8",
+    "last_synced_at": "2025-06-11T10:42:09.134228-07:00"
+  },
+  {
+    "id": 6,
+    "content": "Use llama.cpp to create a local llm that plugs into LLMProvider",
+    "timestamp": "2025-06-10T18:22:47.350019-07:00",
+    "status": "captured",
+    "labels": [
+      "enhancement",
+      "bug"
+    ],
+    "prompt": "",
+    "sync_status": "Synced",
+    "github_id": 9,
+    "github_url": "https://github.com/rklaeser/Relay/issues/9",
+    "last_synced_at": "2025-06-11T13:10:44.215391-07:00"
+  },
+  {
+    "id": 7,
+    "content": "Add sync functionality to TUI",
+    "timestamp": "2025-06-11T10:19:01.213957-07:00",
+    "status": "captured",
+    "labels": null,
+    "prompt": "",
+    "sync_status": "Synced",
+    "github_id": 3,
+    "github_url": "https://github.com/rklaeser/Relay/issues/3",
+    "last_synced_at": "2025-06-11T10:19:01.21394-07:00"
+  },
+  {
+    "id": 8,
+    "content": "Test manual issue",
+    "timestamp": "2025-06-11T10:19:01.218875-07:00",
+    "status": "captured",
+    "labels": null,
+    "prompt": "",
+    "sync_status": "Synced",
+    "github_id": 2,
+    "github_url": "https://github.com/rklaeser/Relay/issues/2",
+    "last_synced_at": "2025-06-11T10:19:01.21394-07:00"
+  },
+  {
+    "id": 10,
+    "content": "Git worktrees",
+    "timestamp": "2025-06-11T14:05:49.613866-07:00",
+    "status": "captured",
+    "labels": [
+      "enhancement"
+    ],
+    "prompt": "",
+    "sync_status": "Synced",
+    "github_id": 10,
+    "github_url": "https://github.com/rklaeser/Relay/issues/10",
+    "last_synced_at": "2025-06-11T14:25:34.591673-07:00"
+  },
+  {
+    "id": 11,
+    "content": "Swap delete for close",
+    "timestamp": "2025-06-11T14:24:30.236762-07:00",
+    "status": "captured",
+    "labels": [
+      "enhancement"
+    ],
+    "prompt": "Intead of delete, close an issue and prompt for whether to Close as completed, not planned, or close as duplicate. Then send that update to GitHub",
+    "sync_status": "Synced",
+    "github_id": 11,
+    "github_url": "https://github.com/rklaeser/Relay/issues/11",
+    "last_synced_at": "2025-06-11T14:25:34.591673-07:00"
+  },
+  {
+    "id": 12,
+    "content": "Test issue",
+    "timestamp": "2025-06-11T14:25:34.246403-07:00",
+    "status": "captured",
+    "labels": [
+      "enhancement"
+    ],
+    "prompt": "This is my issue",
+    "sync_status": "Synced",
+    "github_id": 1,
+    "github_url": "https://github.com/rklaeser/Relay/issues/1",
+    "last_synced_at": "2025-06-11T14:25:34.245072-07:00"
+  }
+]
