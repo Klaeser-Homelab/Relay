@@ -46,13 +46,14 @@ Thumbs.db
 *.tmp
 *.temp
 *.log
+server/tmp/
 
 # Local development
 .env
 .env.local
 
-# Relay data directory (optional - uncomment if you don't want to track user data)
-# .relay/
+# Relay data directory (runtime data should not be tracked)
+.relay/
 
 # Backup files
 *.bak
