@@ -362,7 +362,7 @@ func handleGitHubSync() {
 		os.Exit(1)
 	}
 
-	issueManager, err := NewIssueManager(projectPath)
+	issueManager, err := NewIssueManager(projectPath, configManager)
 	if err != nil {
 		fmt.Printf("Error creating issue manager: %v\n", err)
 		os.Exit(1)

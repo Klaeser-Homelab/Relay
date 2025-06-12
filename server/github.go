@@ -21,7 +21,7 @@ type GitHubIssue struct {
 	Number    int       `json:"number"`
 	Title     string    `json:"title"`
 	Body      string    `json:"body"`
-	State     string    `json:"state"`     // "open" or "closed"
+	State     string    `json:"state"` // "open" or "closed"
 	Labels    []string  `json:"labels"`
 	URL       string    `json:"url"`
 	CreatedAt time.Time `json:"created_at"`
@@ -40,12 +40,12 @@ func NewGitHubService(configManager *ConfigManager, projectPath string) *GitHubS
 func (gs *GitHubService) IsAuthenticated() (bool, error) {
 	cmd := exec.Command("gh", "auth", "status")
 	cmd.Dir = gs.projectPath
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return false, nil // Not authenticated
 	}
-	
+
 	// Check if output contains "Logged in"
 	return strings.Contains(string(output), "Logged in"), nil
 }
@@ -54,22 +54,22 @@ func (gs *GitHubService) IsAuthenticated() (bool, error) {
 func (gs *GitHubService) DetectRepository() (string, error) {
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 	cmd.Dir = gs.projectPath
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get git remote: %w", err)
 	}
-	
+
 	remoteURL := strings.TrimSpace(string(output))
-	
+
 	// Parse GitHub repository from various URL formats
 	// SSH: git@github.com:owner/repo.git
 	// HTTPS: https://github.com/owner/repo.git
 	var repo string
-	
+
 	sshRegex := regexp.MustCompile(`git@github\.com:([^/]+/[^/]+)(?:\.git)?$`)
 	httpsRegex := regexp.MustCompile(`https://github\.com/([^/]+/[^/]+)(?:\.git)?$`)
-	
+
 	if matches := sshRegex.FindStringSubmatch(remoteURL); len(matches) > 1 {
 		repo = matches[1]
 	} else if matches := httpsRegex.FindStringSubmatch(remoteURL); len(matches) > 1 {
@@ -77,10 +77,10 @@ func (gs *GitHubService) DetectRepository() (string, error) {
 	} else {
 		return "", fmt.Errorf("could not parse GitHub repository from remote URL: %s", remoteURL)
 	}
-	
+
 	// Remove .git suffix if present
 	repo = strings.TrimSuffix(repo, ".git")
-	
+
 	return repo, nil
 }
 
@@ -88,12 +88,12 @@ func (gs *GitHubService) DetectRepository() (string, error) {
 func (gs *GitHubService) ValidateRepository(repo string) error {
 	cmd := exec.Command("gh", "repo", "view", repo)
 	cmd.Dir = gs.projectPath
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("repository validation failed: %s", string(output))
 	}
-	
+
 	return nil
 }
 
@@ -103,25 +103,25 @@ func (gs *GitHubService) FetchIssues() ([]GitHubIssue, error) {
 	if config.Repository == "" {
 		return nil, fmt.Errorf("GitHub repository not configured")
 	}
-	
+
 	// Fetch both open and closed issues
-	cmd := exec.Command("gh", "issue", "list", 
+	cmd := exec.Command("gh", "issue", "list",
 		"--repo", config.Repository,
 		"--state", "all",
 		"--json", "number,title,body,state,labels,url,createdAt,updatedAt",
 		"--limit", "1000") // Adjust limit as needed
 	cmd.Dir = gs.projectPath
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch GitHub issues: %w", err)
 	}
-	
+
 	var rawIssues []map[string]interface{}
 	if err := json.Unmarshal(output, &rawIssues); err != nil {
 		return nil, fmt.Errorf("failed to parse GitHub issues JSON: %w", err)
 	}
-	
+
 	var issues []GitHubIssue
 	for _, raw := range rawIssues {
 		issue, err := gs.parseGitHubIssue(raw)
@@ -130,7 +130,7 @@ func (gs *GitHubService) FetchIssues() ([]GitHubIssue, error) {
 		}
 		issues = append(issues, issue)
 	}
-	
+
 	return issues, nil
 }
 
@@ -140,42 +140,42 @@ func (gs *GitHubService) CreateIssue(title, body string, labels []string) (*GitH
 	if config.Repository == "" {
 		return nil, fmt.Errorf("GitHub repository not configured")
 	}
-	
+
 	args := []string{"issue", "create", "--repo", config.Repository, "--title", title}
-	
+
 	// Always provide body, even if empty (required by gh CLI in non-interactive mode)
 	if body == "" {
 		body = " " // Use single space instead of empty string
 	}
 	args = append(args, "--body", body)
-	
+
 	if len(labels) > 0 {
 		args = append(args, "--label", strings.Join(labels, ","))
 	}
-	
+
 	cmd := exec.Command("gh", args...)
 	cmd.Dir = gs.projectPath
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GitHub issue: %s", string(output))
 	}
-	
+
 	// The output from gh issue create is just the URL
 	issueURL := strings.TrimSpace(string(output))
-	
+
 	// Extract issue number from URL (e.g., https://github.com/owner/repo/issues/123)
 	parts := strings.Split(issueURL, "/")
 	if len(parts) < 1 {
 		return nil, fmt.Errorf("invalid issue URL format: %s", issueURL)
 	}
-	
+
 	issueNumberStr := parts[len(parts)-1]
 	issueNumber := 0
 	if _, err := fmt.Sscanf(issueNumberStr, "%d", &issueNumber); err != nil {
 		return nil, fmt.Errorf("failed to parse issue number from URL: %s", issueURL)
 	}
-	
+
 	// Return basic issue info - we could fetch full details with another call if needed
 	issue := GitHubIssue{
 		Number: issueNumber,
@@ -185,7 +185,7 @@ func (gs *GitHubService) CreateIssue(title, body string, labels []string) (*GitH
 		Labels: labels,
 		URL:    issueURL,
 	}
-	
+
 	return &issue, nil
 }
 
@@ -195,9 +195,9 @@ func (gs *GitHubService) UpdateIssue(number int, title, body string, state strin
 	if config.Repository == "" {
 		return fmt.Errorf("GitHub repository not configured")
 	}
-	
+
 	issueStr := strconv.Itoa(number)
-	
+
 	// Update title and body
 	if title != "" || body != "" {
 		args := []string{"issue", "edit", issueStr, "--repo", config.Repository}
@@ -207,15 +207,15 @@ func (gs *GitHubService) UpdateIssue(number int, title, body string, state strin
 		if body != "" {
 			args = append(args, "--body", body)
 		}
-		
+
 		cmd := exec.Command("gh", args...)
 		cmd.Dir = gs.projectPath
-		
+
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed to update issue %d: %s", number, string(output))
 		}
 	}
-	
+
 	// Update labels
 	if len(labels) > 0 {
 		// First, remove all existing labels by getting current labels and removing them
@@ -225,7 +225,7 @@ func (gs *GitHubService) UpdateIssue(number int, title, body string, state strin
 		if _, err := cmd.CombinedOutput(); err != nil {
 			// Ignore errors for removing labels as it might fail if no labels exist
 		}
-		
+
 		// Then add the new labels
 		args = []string{"issue", "edit", issueStr, "--repo", config.Repository, "--add-label", strings.Join(labels, ",")}
 		cmd = exec.Command("gh", args...)
@@ -257,41 +257,41 @@ func (gs *GitHubService) UpdateIssue(number int, title, body string, state strin
 			return fmt.Errorf("failed to reopen issue %d: %s", number, string(output))
 		}
 	}
-	
+
 	return nil
 }
 
 // parseGitHubIssue converts raw JSON data to GitHubIssue struct
 func (gs *GitHubService) parseGitHubIssue(raw map[string]interface{}) (GitHubIssue, error) {
 	issue := GitHubIssue{}
-	
+
 	// Parse number
 	if num, ok := raw["number"].(float64); ok {
 		issue.Number = int(num)
 	} else {
 		return issue, fmt.Errorf("invalid issue number")
 	}
-	
+
 	// Parse title
 	if title, ok := raw["title"].(string); ok {
 		issue.Title = title
 	}
-	
+
 	// Parse body
 	if body, ok := raw["body"].(string); ok {
 		issue.Body = body
 	}
-	
+
 	// Parse state
 	if state, ok := raw["state"].(string); ok {
 		issue.State = state
 	}
-	
+
 	// Parse URL
 	if url, ok := raw["url"].(string); ok {
 		issue.URL = url
 	}
-	
+
 	// Parse labels
 	if labelsRaw, ok := raw["labels"].([]interface{}); ok {
 		for _, labelRaw := range labelsRaw {
@@ -302,20 +302,20 @@ func (gs *GitHubService) parseGitHubIssue(raw map[string]interface{}) (GitHubIss
 			}
 		}
 	}
-	
+
 	// Parse timestamps
 	if createdStr, ok := raw["createdAt"].(string); ok {
 		if created, err := time.Parse(time.RFC3339, createdStr); err == nil {
 			issue.CreatedAt = created
 		}
 	}
-	
+
 	if updatedStr, ok := raw["updatedAt"].(string); ok {
 		if updated, err := time.Parse(time.RFC3339, updatedStr); err == nil {
 			issue.UpdatedAt = updated
 		}
 	}
-	
+
 	return issue, nil
 }
 
@@ -369,6 +369,6 @@ func (gs *GitHubService) MapGitHubLabelsToLocal(githubLabels []string) []string 
 			localLabels = append(localLabels, label)
 		}
 	}
-	
+
 	return localLabels
 }

@@ -72,7 +72,7 @@ type OpenAIResponse struct {
 // NewOpenAIProvider creates a new OpenAI API provider
 func NewOpenAIProvider(config LLMProviderConfig) (*OpenAIProvider, error) {
 	logger := log.New(os.Stdout, "[OpenAIProvider] ", log.LstdFlags)
-	
+
 	// Use API key from config or environment
 	apiKey := config.APIKey
 	if apiKey == "" {
@@ -81,25 +81,25 @@ func NewOpenAIProvider(config LLMProviderConfig) (*OpenAIProvider, error) {
 			return nil, fmt.Errorf("OpenAI API key not provided in config or OPENAI_API_KEY environment variable")
 		}
 	}
-	
+
 	// Set default model if not specified
 	if config.Model == "" {
 		config.Model = defaultGPTModel
 	}
-	
+
 	// Set default max tokens if not specified
 	if config.MaxTokens == 0 {
 		config.MaxTokens = 4096
 	}
-	
+
 	config.APIKey = apiKey
-	
+
 	httpClient := &http.Client{
 		Timeout: 60 * time.Second,
 	}
-	
+
 	logger.Printf("OpenAI API provider initialized (model: %s, maxTokens: %d)", config.Model, config.MaxTokens)
-	
+
 	return &OpenAIProvider{
 		config:     config,
 		httpClient: httpClient,
@@ -113,7 +113,7 @@ func (p *OpenAIProvider) SendMessage(ctx context.Context, message string) (strin
 	messages := []OpenAIMessage{
 		{Role: "user", Content: message},
 	}
-	
+
 	return p.sendRequest(ctx, messages)
 }
 
@@ -129,28 +129,28 @@ func (p *OpenAIProvider) SendMessageWithSession(ctx context.Context, message str
 		p.sessions[sessionID] = session
 	}
 	p.sessionMu.Unlock()
-	
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	
+
 	// Add user message to session
 	session.Messages = append(session.Messages, OpenAIMessage{
 		Role:    "user",
 		Content: message,
 	})
-	
+
 	// Send request with full conversation history
 	response, err := p.sendRequest(ctx, session.Messages)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Add assistant response to session
 	session.Messages = append(session.Messages, OpenAIMessage{
 		Role:    "assistant",
 		Content: response,
 	})
-	
+
 	return response, nil
 }
 
@@ -162,50 +162,50 @@ func (p *OpenAIProvider) sendRequest(ctx context.Context, messages []OpenAIMessa
 		MaxTokens:   p.config.MaxTokens,
 		Temperature: 0.7,
 	}
-	
+
 	jsonData, err := json.Marshal(request)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
-	
+
 	p.logger.Printf("Sending request to OpenAI API (model: %s, messages: %d)", p.config.Model, len(messages))
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", openaiAPIURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.config.APIKey)
-	
+
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(body))
 	}
-	
+
 	var openaiResp OpenAIResponse
 	if err := json.Unmarshal(body, &openaiResp); err != nil {
 		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
-	
+
 	if len(openaiResp.Choices) == 0 {
 		return "", fmt.Errorf("empty response choices from OpenAI API")
 	}
-	
+
 	response := openaiResp.Choices[0].Message.Content
-	p.logger.Printf("Received response from OpenAI API (%d chars, %d total tokens)", 
+	p.logger.Printf("Received response from OpenAI API (%d chars, %d total tokens)",
 		len(response), openaiResp.Usage.TotalTokens)
-	
+
 	return response, nil
 }
 
@@ -218,10 +218,10 @@ func (p *OpenAIProvider) GetProviderName() string {
 func (p *OpenAIProvider) Close() error {
 	p.sessionMu.Lock()
 	defer p.sessionMu.Unlock()
-	
+
 	// Clear all sessions
 	p.sessions = make(map[string]*OpenAISession)
-	
+
 	p.logger.Println("OpenAI API provider closed")
 	return nil
 }

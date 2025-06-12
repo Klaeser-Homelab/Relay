@@ -9,13 +9,13 @@ import (
 
 // LabelEditorModel handles interactive label editing
 type LabelEditorModel struct {
-	issueID          int
-	currentLabels    []string
-	availableLabels  []string
-	selected         int
-	width            int
-	height           int
-	onComplete       func([]string) tea.Cmd
+	issueID         int
+	currentLabels   []string
+	availableLabels []string
+	selected        int
+	width           int
+	height          int
+	onComplete      func([]string) tea.Cmd
 }
 
 // LabelEditorData contains data for the label editor
@@ -28,7 +28,7 @@ type LabelEditorData struct {
 // NewLabelEditorModel creates a new label editor model
 func NewLabelEditorModel(data LabelEditorData) LabelEditorModel {
 	availableLabels := []string{"bug", "enhancement"}
-	
+
 	return LabelEditorModel{
 		issueID:         data.IssueID,
 		currentLabels:   append([]string(nil), data.CurrentLabels...), // Copy slice
@@ -49,17 +49,17 @@ func (m LabelEditorModel) Update(msg tea.Msg) (LabelEditorModel, tea.Cmd) {
 		case "q", "esc":
 			// Cancel and go back
 			return m, BackToPreviousView()
-			
+
 		case "up", "k":
 			if m.selected > 0 {
 				m.selected--
 			}
-			
+
 		case "down", "j":
 			if m.selected < len(m.availableLabels)-1 {
 				m.selected++
 			}
-			
+
 		case "enter", " ":
 			// Toggle selected label
 			selectedLabel := m.availableLabels[m.selected]
@@ -68,7 +68,7 @@ func (m LabelEditorModel) Update(msg tea.Msg) (LabelEditorModel, tea.Cmd) {
 			} else {
 				m.addLabel(selectedLabel)
 			}
-			
+
 		case "s":
 			// Save and go back
 			if m.onComplete != nil {
@@ -77,32 +77,32 @@ func (m LabelEditorModel) Update(msg tea.Msg) (LabelEditorModel, tea.Cmd) {
 			return m, BackToPreviousView()
 		}
 	}
-	
+
 	return m, nil
 }
 
 func (m LabelEditorModel) View() string {
 	var content strings.Builder
-	
+
 	// Title
 	title := titleStyle.Render("🏷️  Edit Labels")
 	content.WriteString(title + "\n")
 	content.WriteString(strings.Repeat("=", 15) + "\n\n")
-	
+
 	// Instructions
 	content.WriteString("Use ↑↓ to navigate, Enter to toggle, 's' to save, 'q' to cancel\n\n")
-	
+
 	// Available labels with checkmarks
 	for i, label := range m.availableLabels {
 		var line string
-		
+
 		// Add checkmark for selected labels
 		if m.hasLabel(label) {
 			line = "✓ "
 		} else {
 			line = "  "
 		}
-		
+
 		// Add styled label
 		if label == "bug" {
 			line += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true).Render(label)
@@ -111,32 +111,32 @@ func (m LabelEditorModel) View() string {
 		} else {
 			line += label
 		}
-		
+
 		// Highlight selected item
 		if i == m.selected {
 			line = selectedIssueStyle.Render("> " + line)
 		} else {
 			line = unselectedIssueStyle.Render("  " + line)
 		}
-		
+
 		content.WriteString(line + "\n")
 	}
-	
+
 	content.WriteString("\n")
-	
+
 	// Current selection
 	currentLabelsStr := strings.Join(m.currentLabels, ", ")
 	if currentLabelsStr == "" {
 		currentLabelsStr = "none"
 	}
-	
+
 	grayStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Faint(true)
-	content.WriteString(grayStyle.Render("Current labels: " + currentLabelsStr) + "\n\n")
-	
+	content.WriteString(grayStyle.Render("Current labels: "+currentLabelsStr) + "\n\n")
+
 	// Help
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	content.WriteString(helpStyle.Render("↑↓ Navigate  •  Enter Toggle  •  s Save  •  q Cancel") + "\n")
-	
+
 	return content.String()
 }
 

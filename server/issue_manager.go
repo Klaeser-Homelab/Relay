@@ -17,25 +17,26 @@ type Issue struct {
 	ID           int        `json:"id"`
 	Content      string     `json:"content"`
 	Timestamp    time.Time  `json:"timestamp"`
-	Status       string     `json:"status"`        // "captured", "in-progress", "done", "archived"
-	Labels       []string   `json:"labels"`        // "bug", "enhancement"
-	Prompt       string     `json:"prompt"`        // Custom prompt for Claude Code
-	SyncStatus   string     `json:"sync_status"`   // "Synced", "Syncing", "Sync Error"
-	GitHubID     *int       `json:"github_id"`     // GitHub issue number (nil if not synced)
-	GitHubURL    string     `json:"github_url"`    // GitHub issue URL
+	Status       string     `json:"status"`         // "captured", "in-progress", "done", "archived"
+	Labels       []string   `json:"labels"`         // "bug", "enhancement"
+	Prompt       string     `json:"prompt"`         // Custom prompt for Claude Code
+	SyncStatus   string     `json:"sync_status"`    // "Synced", "Syncing", "Sync Error"
+	GitHubID     *int       `json:"github_id"`      // GitHub issue number (nil if not synced)
+	GitHubURL    string     `json:"github_url"`     // GitHub issue URL
 	LastSyncedAt *time.Time `json:"last_synced_at"` // Last successful sync timestamp
 }
 
 // IssueManager manages issues for a specific project
 type IssueManager struct {
-	issues      []Issue
-	projectPath string
-	nextID      int
-	dataFile    string
+	issues        []Issue
+	projectPath   string
+	nextID        int
+	dataFile      string
+	configManager *ConfigManager
 }
 
 // NewIssueManager creates a new IssueManager for the specified project
-func NewIssueManager(projectPath string) (*IssueManager, error) {
+func NewIssueManager(projectPath string, configManager *ConfigManager) (*IssueManager, error) {
 	// Create .relay directory if it doesn't exist
 	relayDir := filepath.Join(projectPath, ".relay")
 	if err := os.MkdirAll(relayDir, 0755); err != nil {
@@ -45,10 +46,11 @@ func NewIssueManager(projectPath string) (*IssueManager, error) {
 	dataFile := filepath.Join(relayDir, "issues.json")
 
 	im := &IssueManager{
-		issues:      []Issue{},
-		projectPath: projectPath,
-		nextID:      1,
-		dataFile:    dataFile,
+		issues:        []Issue{},
+		projectPath:   projectPath,
+		nextID:        1,
+		dataFile:      dataFile,
+		configManager: configManager,
 	}
 
 	// Load existing issues from file
@@ -142,7 +144,7 @@ func (im *IssueManager) AddIssue(content string) (*Issue, error) {
 		Timestamp:  time.Now(),
 		Status:     "captured",
 		Labels:     categorizeIssue(content), // Returns []string now
-		SyncStatus: "Synced", // Default to synced for new issues
+		SyncStatus: "Synced",                 // Default to synced for new issues
 	}
 
 	// Add to issues slice
@@ -366,11 +368,47 @@ func (im *IssueManager) CloseIssue(id int, closeReason string) error {
 				return fmt.Errorf("failed to save issue close: %w", err)
 			}
 
+			// If issue is synced to GitHub, close it there too
+			if im.issues[i].GitHubID != nil {
+				if err := im.closeIssueOnGitHub(&im.issues[i], closeReason); err != nil {
+					// Log error but don't fail the local close operation
+					fmt.Printf("Warning: Failed to close issue on GitHub: %v\n", err)
+				}
+			}
+
 			return nil
 		}
 	}
 
 	return fmt.Errorf("issue with ID %d not found", id)
+}
+
+// closeIssueOnGitHub closes the corresponding GitHub issue
+func (im *IssueManager) closeIssueOnGitHub(issue *Issue, closeReason string) error {
+	if issue.GitHubID == nil {
+		return fmt.Errorf("issue is not synced to GitHub")
+	}
+
+	// Create GitHub service
+	githubService := NewGitHubService(im.configManager, im.projectPath)
+
+	// Check if GitHub CLI is authenticated
+	authenticated, err := githubService.IsAuthenticated()
+	if err != nil {
+		return fmt.Errorf("failed to check GitHub authentication: %w", err)
+	}
+	if !authenticated {
+		return fmt.Errorf("GitHub CLI is not authenticated. Run 'gh auth login' first")
+	}
+
+	// Close the issue on GitHub
+	err = githubService.UpdateIssue(*issue.GitHubID, "", "", "closed", nil)
+	if err != nil {
+		return fmt.Errorf("failed to close GitHub issue #%d: %w", *issue.GitHubID, err)
+	}
+
+	fmt.Printf("Successfully closed GitHub issue #%d (%s)\n", *issue.GitHubID, closeReason)
+	return nil
 }
 
 // UpdateIssueGitHubData updates the GitHub-related data for an issue
@@ -478,8 +516,15 @@ func (im *IssueManager) DeleteIssue(id int) error {
 // ListIssues returns all issues, optionally filtered by status or label
 func (im *IssueManager) ListIssues(filterStatus, filterLabel string) []Issue {
 	var filteredIssues []Issue
+	now := time.Now()
+	oneDayAgo := now.Add(-24 * time.Hour)
 
 	for _, issue := range im.issues {
+		// Filter out closed issues older than one day
+		if issue.Status == "done" && issue.Timestamp.Before(oneDayAgo) {
+			continue
+		}
+
 		// Apply status filter
 		if filterStatus != "" && issue.Status != filterStatus {
 			continue
@@ -502,8 +547,17 @@ func (im *IssueManager) ListIssues(filterStatus, filterLabel string) []Issue {
 		filteredIssues = append(filteredIssues, issue)
 	}
 
-	// Sort by timestamp (newest first)
+	// Sort with closed issues at the bottom, then by timestamp within each group
 	sort.Slice(filteredIssues, func(i, j int) bool {
+		// First, sort by status: non-closed issues come first
+		isClosed_i := filteredIssues[i].Status == "done"
+		isClosed_j := filteredIssues[j].Status == "done"
+
+		if isClosed_i != isClosed_j {
+			return !isClosed_i // Non-closed issues come first
+		}
+
+		// Within the same status group, sort by timestamp (newest first)
 		return filteredIssues[i].Timestamp.After(filteredIssues[j].Timestamp)
 	})
 
@@ -618,16 +672,21 @@ func (im *IssueManager) FormatIssueList(issues []Issue, showDetails bool) string
 	for _, issue := range issues {
 		statusEmoji := getStatusEmoji(issue.Status)
 		relativeTime := formatRelativeTime(issue.Timestamp)
-		
+
 		// Format labels
 		labelsStr := strings.Join(issue.Labels, ", ")
 		if labelsStr == "" {
 			labelsStr = "no labels"
 		}
 
+		displayStatus := issue.Status
+		if issue.Status == "done" {
+			displayStatus = "closed"
+		}
+
 		if showDetails {
 			output.WriteString(fmt.Sprintf("  #%d [%s] %s (%s) - %s\n",
-				issue.ID, labelsStr, issue.Content, issue.Status, relativeTime))
+				issue.ID, labelsStr, issue.Content, displayStatus, relativeTime))
 		} else {
 			// Truncate long content for list view
 			content := issue.Content
@@ -635,7 +694,7 @@ func (im *IssueManager) FormatIssueList(issues []Issue, showDetails bool) string
 				content = content[:57] + "..."
 			}
 			output.WriteString(fmt.Sprintf("  #%d %s %s [%s] (%s) - %s\n",
-				issue.ID, statusEmoji, content, labelsStr, issue.Status, relativeTime))
+				issue.ID, statusEmoji, content, labelsStr, displayStatus, relativeTime))
 		}
 	}
 
@@ -645,17 +704,22 @@ func (im *IssueManager) FormatIssueList(issues []Issue, showDetails bool) string
 // FormatIssueDetails formats detailed information about a single issue
 func (im *IssueManager) FormatIssueDetails(issue *Issue) string {
 	statusEmoji := getStatusEmoji(issue.Status)
-	
+
 	// Format labels
 	labelsStr := strings.Join(issue.Labels, ", ")
 	if labelsStr == "" {
 		labelsStr = "no labels"
 	}
 
+	displayStatus := issue.Status
+	if issue.Status == "done" {
+		displayStatus = "closed"
+	}
+
 	var output strings.Builder
 	output.WriteString(fmt.Sprintf("📋 Issue #%d\n", issue.ID))
 	output.WriteString(fmt.Sprintf("Content: %s\n", issue.Content))
-	output.WriteString(fmt.Sprintf("Status: %s %s\n", statusEmoji, issue.Status))
+	output.WriteString(fmt.Sprintf("Status: %s %s\n", statusEmoji, displayStatus))
 	output.WriteString(fmt.Sprintf("Labels: %s\n", labelsStr))
 	output.WriteString(fmt.Sprintf("Created: %s (%s)\n", issue.Timestamp.Format("2006-01-02 15:04:05"), formatRelativeTime(issue.Timestamp)))
 

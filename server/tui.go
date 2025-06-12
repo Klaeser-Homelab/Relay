@@ -26,11 +26,11 @@ type TUIModel struct {
 	currentView ViewType
 	width       int
 	height      int
-	
+
 	// REPL components
-	replSession  *REPLSession
-	replModel    REPLModel
-	
+	replSession *REPLSession
+	replModel   REPLModel
+
 	// Issue management components
 	issueListModel    IssueListModel
 	issueDetailModel  IssueDetailModel
@@ -38,12 +38,12 @@ type TUIModel struct {
 	confirmationModel ConfirmationModel
 	labelEditorModel  LabelEditorModel
 	closeReasonModel  CloseReasonModel
-	
+
 	// Config components
-	configMenuModel        ConfigMenuModel
-	llmConfigModel         LLMConfigModel
+	configMenuModel         ConfigMenuModel
+	llmConfigModel          LLMConfigModel
 	issueTrackerConfigModel IssueTrackerConfigModel
-	
+
 	// Navigation state
 	previousView ViewType
 	err          error
@@ -53,38 +53,38 @@ type TUIModel struct {
 func InitTUI(replSession *REPLSession) TUIModel {
 	// Initialize with default dimensions that will be updated by WindowSizeMsg
 	defaultWidth, defaultHeight := 80, 24
-	
+
 	replModel := NewREPLModel(replSession)
 	replModel.width = defaultWidth
 	replModel.height = defaultHeight
-	
+
 	issueListModel := NewIssueListModel(replSession.issueManager, replSession.configManager, replSession.currentProject.Name, replSession.currentProject.Path)
 	issueListModel.width = defaultWidth
 	issueListModel.height = defaultHeight
-	
+
 	configMenuModel := NewConfigMenuModel(replSession.configManager)
 	configMenuModel.width = defaultWidth
 	configMenuModel.height = defaultHeight
-	
+
 	llmConfigModel := NewLLMConfigModel(replSession.configManager)
 	llmConfigModel.width = defaultWidth
 	llmConfigModel.height = defaultHeight
-	
+
 	issueTrackerConfigModel := NewIssueTrackerConfigModel(replSession.configManager)
 	issueTrackerConfigModel.width = defaultWidth
 	issueTrackerConfigModel.height = defaultHeight
-	
+
 	return TUIModel{
 		currentView:             ViewREPL,
-		width:                  defaultWidth,
-		height:                 defaultHeight,
-		replSession:            replSession,
-		replModel:              replModel,
-		issueListModel:         issueListModel,
-		configMenuModel:        configMenuModel,
-		llmConfigModel:         llmConfigModel,
+		width:                   defaultWidth,
+		height:                  defaultHeight,
+		replSession:             replSession,
+		replModel:               replModel,
+		issueListModel:          issueListModel,
+		configMenuModel:         configMenuModel,
+		llmConfigModel:          llmConfigModel,
 		issueTrackerConfigModel: issueTrackerConfigModel,
-		previousView:           ViewREPL,
+		previousView:            ViewREPL,
 	}
 }
 
@@ -94,12 +94,12 @@ func (m TUIModel) Init() tea.Cmd {
 
 func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		
+
 		// Update all sub-models with new size
 		m.replModel.width = msg.Width
 		m.replModel.height = msg.Height
@@ -111,23 +111,23 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.llmConfigModel.height = msg.Height
 		m.issueTrackerConfigModel.width = msg.Width
 		m.issueTrackerConfigModel.height = msg.Height
-		
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
 		}
-		
+
 		// Handle view-specific navigation
 		switch m.currentView {
 		case ViewREPL:
 			// REPL handles its own commands
 		}
-	
+
 	case SwitchViewMsg:
 		m.previousView = m.currentView
 		m.currentView = msg.View
-		
+
 		switch msg.View {
 		case ViewIssueList:
 			m.issueListModel = NewIssueListModel(m.replSession.issueManager, m.replSession.configManager, m.replSession.currentProject.Name, m.replSession.currentProject.Path)
@@ -190,14 +190,14 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.replModel.ClearContext()
 			}
 		}
-		
+
 		return m, nil
-		
+
 	case BackToPreviousViewMsg:
 		m.currentView = m.previousView
 		return m, nil
 	}
-	
+
 	// Update the current view's model
 	switch m.currentView {
 	case ViewREPL:
@@ -221,7 +221,7 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ViewCloseReason:
 		m.closeReasonModel, cmd = m.closeReasonModel.Update(msg)
 	}
-	
+
 	return m, cmd
 }
 
@@ -248,7 +248,7 @@ func (m TUIModel) View() string {
 	case ViewCloseReason:
 		return m.closeReasonModel.View()
 	}
-	
+
 	return "Unknown view"
 }
 
@@ -273,9 +273,9 @@ type ConfirmationData struct {
 }
 
 type CloseReasonData struct {
-	IssueID   int
+	IssueID    int
 	IssueTitle string
-	OnConfirm func(string) tea.Cmd // Callback with selected close reason
+	OnConfirm  func(string) tea.Cmd // Callback with selected close reason
 }
 
 // Helper functions for creating view switch commands
@@ -294,41 +294,41 @@ func BackToPreviousView() tea.Cmd {
 // Shared styles
 var (
 	titleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("12")).
-		MarginBottom(1)
-		
+			Bold(true).
+			Foreground(lipgloss.Color("12")).
+			MarginBottom(1)
+
 	selectedStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("green")).
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("8")).
-		Padding(0, 1)
-		
+			Bold(true).
+			Foreground(lipgloss.Color("green")).
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("8")).
+			Padding(0, 1)
+
 	normalStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("green"))
-		
+			Foreground(lipgloss.Color("green"))
+
 	helpStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("8")).
-		MarginTop(1)
-		
+			Foreground(lipgloss.Color("8")).
+			MarginTop(1)
+
 	selectedIssueStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("12"))
-		
+				Bold(true).
+				Foreground(lipgloss.Color("12"))
+
 	unselectedIssueStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("15"))
-		
+				Foreground(lipgloss.Color("15"))
+
 	errorStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("9")).
-		Bold(true)
+			Foreground(lipgloss.Color("9")).
+			Bold(true)
 
 	selectedActionStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("15"))   // White for selected action text
+				Foreground(lipgloss.Color("15")) // White for selected action text
 
 	unselectedActionStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("8"))    // Gray for unselected action text
+				Foreground(lipgloss.Color("8")) // Gray for unselected action text
 
 	historyStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("8"))    // Gray for command history
+			Foreground(lipgloss.Color("8")) // Gray for command history
 )

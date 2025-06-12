@@ -57,7 +57,7 @@ func (gsm *GitHubSyncManager) SyncPull() (*SyncResult, error) {
 	for _, githubIssue := range githubIssues {
 		// Check if we already have this GitHub issue locally
 		existingIssue, err := gsm.issueManager.GetIssueByGitHubID(githubIssue.Number)
-		
+
 		if err != nil {
 			// Issue doesn't exist locally, create it
 			localIssue, err := gsm.createLocalIssueFromGitHub(githubIssue, now)
@@ -66,7 +66,7 @@ func (gsm *GitHubSyncManager) SyncPull() (*SyncResult, error) {
 				continue
 			}
 			result.CreatedLocal++
-			
+
 			// Mark as synced
 			gsm.issueManager.UpdateIssueSyncStatus(localIssue.ID, "Synced")
 		} else {
@@ -249,7 +249,7 @@ func (gsm *GitHubSyncManager) updateLocalIssueFromGitHub(localIssue *Issue, gith
 	// Map GitHub data to local format
 	status := gsm.githubService.MapGitHubStateToLocal(githubIssue.State)
 	labels := gsm.githubService.MapGitHubLabelsToLocal(githubIssue.Labels)
-	
+
 	// Extract prompt from GitHub body
 	githubPrompt := gsm.extractPromptFromGitHubBody(githubIssue.Body)
 
@@ -283,12 +283,12 @@ func (gsm *GitHubSyncManager) updateLocalIssueFromGitHub(localIssue *Issue, gith
 		}
 	} else {
 		// Check each field for conflicts and apply newest-wins strategy
-		
+
 		// Content/Title - newest-wins if both changed since last sync
 		if localIssue.Content != githubIssue.Title {
 			localChangedAfterSync := localIssue.Timestamp.After(*lastSyncTime)
 			githubChangedAfterSync := githubIssue.UpdatedAt.After(*lastSyncTime)
-			
+
 			if githubChangedAfterSync && (!localChangedAfterSync || githubIssue.UpdatedAt.After(localIssue.Timestamp)) {
 				err := gsm.issueManager.UpdateIssueContent(localIssue.ID, githubIssue.Title)
 				if err != nil {
@@ -301,7 +301,7 @@ func (gsm *GitHubSyncManager) updateLocalIssueFromGitHub(localIssue *Issue, gith
 		if localIssue.Status != status {
 			localChangedAfterSync := localIssue.Timestamp.After(*lastSyncTime)
 			githubChangedAfterSync := githubIssue.UpdatedAt.After(*lastSyncTime)
-			
+
 			if githubChangedAfterSync && (!localChangedAfterSync || githubIssue.UpdatedAt.After(localIssue.Timestamp)) {
 				err := gsm.issueManager.UpdateIssueStatus(localIssue.ID, status)
 				if err != nil {
@@ -314,7 +314,7 @@ func (gsm *GitHubSyncManager) updateLocalIssueFromGitHub(localIssue *Issue, gith
 		if !equalSlices(localIssue.Labels, labels) {
 			localChangedAfterSync := localIssue.Timestamp.After(*lastSyncTime)
 			githubChangedAfterSync := githubIssue.UpdatedAt.After(*lastSyncTime)
-			
+
 			if githubChangedAfterSync && (!localChangedAfterSync || githubIssue.UpdatedAt.After(localIssue.Timestamp)) {
 				err := gsm.issueManager.UpdateIssueLabels(localIssue.ID, labels)
 				if err != nil {
@@ -327,7 +327,7 @@ func (gsm *GitHubSyncManager) updateLocalIssueFromGitHub(localIssue *Issue, gith
 		if localIssue.Prompt != githubPrompt {
 			localChangedAfterSync := localIssue.Timestamp.After(*lastSyncTime)
 			githubChangedAfterSync := githubIssue.UpdatedAt.After(*lastSyncTime)
-			
+
 			if githubChangedAfterSync && (!localChangedAfterSync || githubIssue.UpdatedAt.After(localIssue.Timestamp)) {
 				err := gsm.issueManager.UpdateIssuePrompt(localIssue.ID, githubPrompt)
 				if err != nil {
@@ -374,7 +374,7 @@ func (gsm *GitHubSyncManager) shouldUpdateLocalIssue(localIssue *Issue, githubIs
 	if localIssue.LastSyncedAt == nil {
 		return true
 	}
-	
+
 	// Check if GitHub issue was updated after our last sync
 	if githubIssue.UpdatedAt.Before(*localIssue.LastSyncedAt) {
 		return false // GitHub issue is older than our last sync
@@ -386,9 +386,9 @@ func (gsm *GitHubSyncManager) shouldUpdateLocalIssue(localIssue *Issue, githubIs
 	expectedPrompt := gsm.extractPromptFromGitHubBody(githubIssue.Body)
 
 	return localIssue.Content != githubIssue.Title ||
-		   localIssue.Status != expectedStatus ||
-		   !equalSlices(localIssue.Labels, expectedLabels) ||
-		   localIssue.Prompt != expectedPrompt
+		localIssue.Status != expectedStatus ||
+		!equalSlices(localIssue.Labels, expectedLabels) ||
+		localIssue.Prompt != expectedPrompt
 }
 
 // equalSlices compares two string slices for equality

@@ -69,7 +69,7 @@ type ClaudeAPIResponse struct {
 // NewClaudeProvider creates a new Claude API provider
 func NewClaudeProvider(config LLMProviderConfig, workingDir string) (*ClaudeProvider, error) {
 	logger := log.New(os.Stdout, "[ClaudeProvider] ", log.LstdFlags)
-	
+
 	// Use API key from config or environment
 	apiKey := config.APIKey
 	if apiKey == "" {
@@ -78,25 +78,25 @@ func NewClaudeProvider(config LLMProviderConfig, workingDir string) (*ClaudeProv
 			return nil, fmt.Errorf("Claude API key not provided in config or ANTHROPIC_API_KEY environment variable")
 		}
 	}
-	
+
 	// Set default model if not specified
 	if config.Model == "" {
 		config.Model = defaultModel
 	}
-	
+
 	// Set default max tokens if not specified
 	if config.MaxTokens == 0 {
 		config.MaxTokens = 4096
 	}
-	
+
 	config.APIKey = apiKey
-	
+
 	httpClient := &http.Client{
 		Timeout: 60 * time.Second,
 	}
-	
+
 	logger.Printf("Claude API provider initialized (model: %s, maxTokens: %d)", config.Model, config.MaxTokens)
-	
+
 	return &ClaudeProvider{
 		config:     config,
 		httpClient: httpClient,
@@ -111,7 +111,7 @@ func (p *ClaudeProvider) SendMessage(ctx context.Context, message string) (strin
 	messages := []ClaudeMessage{
 		{Role: "user", Content: message},
 	}
-	
+
 	return p.sendRequest(ctx, messages)
 }
 
@@ -127,28 +127,28 @@ func (p *ClaudeProvider) SendMessageWithSession(ctx context.Context, message str
 		p.sessions[sessionID] = session
 	}
 	p.sessionMu.Unlock()
-	
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	
+
 	// Add user message to session
 	session.Messages = append(session.Messages, ClaudeMessage{
 		Role:    "user",
 		Content: message,
 	})
-	
+
 	// Send request with full conversation history
 	response, err := p.sendRequest(ctx, session.Messages)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Add assistant response to session
 	session.Messages = append(session.Messages, ClaudeMessage{
 		Role:    "assistant",
 		Content: response,
 	})
-	
+
 	return response, nil
 }
 
@@ -159,51 +159,51 @@ func (p *ClaudeProvider) sendRequest(ctx context.Context, messages []ClaudeMessa
 		MaxTokens: p.config.MaxTokens,
 		Messages:  messages,
 	}
-	
+
 	jsonData, err := json.Marshal(request)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
-	
+
 	p.logger.Printf("Sending request to Claude API (model: %s, messages: %d)", p.config.Model, len(messages))
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", claudeAPIURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", p.config.APIKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
-	
+
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("Claude API error (status %d): %s", resp.StatusCode, string(body))
 	}
-	
+
 	var claudeResp ClaudeAPIResponse
 	if err := json.Unmarshal(body, &claudeResp); err != nil {
 		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
-	
+
 	if len(claudeResp.Content) == 0 {
 		return "", fmt.Errorf("empty response content from Claude API")
 	}
-	
+
 	response := claudeResp.Content[0].Text
-	p.logger.Printf("Received response from Claude API (%d chars, %d input tokens, %d output tokens)", 
+	p.logger.Printf("Received response from Claude API (%d chars, %d input tokens, %d output tokens)",
 		len(response), claudeResp.Usage.InputTokens, claudeResp.Usage.OutputTokens)
-	
+
 	return response, nil
 }
 
@@ -216,10 +216,10 @@ func (p *ClaudeProvider) GetProviderName() string {
 func (p *ClaudeProvider) Close() error {
 	p.sessionMu.Lock()
 	defer p.sessionMu.Unlock()
-	
+
 	// Clear all sessions
 	p.sessions = make(map[string]*ClaudeSession)
-	
+
 	p.logger.Println("Claude API provider closed")
 	return nil
 }

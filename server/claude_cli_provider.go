@@ -15,7 +15,7 @@ func NewClaudeCLIProvider(workingDir string) (*ClaudeCLIProvider, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &ClaudeCLIProvider{
 		cli: cli,
 	}, nil

@@ -41,22 +41,22 @@ func (m TextInputModel) Update(msg tea.Msg) (TextInputModel, tea.Cmd) {
 				return m, m.onComplete(m.input)
 			}
 			return m, BackToPreviousView()
-			
+
 		case "esc":
 			return m, BackToPreviousView()
-			
+
 		case "backspace":
 			if len(m.input) > 0 {
 				m.input = m.input[:len(m.input)-1]
 			}
-			
+
 		case "ctrl+v", "cmd+v":
 			// Handle paste
 			return m.handlePaste()
-			
+
 		case "ctrl+c":
 			return m, tea.Quit
-			
+
 		default:
 			// Add character to input
 			if len(msg.String()) == 1 {
@@ -64,7 +64,7 @@ func (m TextInputModel) Update(msg tea.Msg) (TextInputModel, tea.Cmd) {
 			}
 		}
 	}
-	
+
 	return m, nil
 }
 
@@ -76,7 +76,7 @@ func (m TextInputModel) handlePaste() (TextInputModel, tea.Cmd) {
 		clipboardText = strings.ReplaceAll(clipboardText, "\n", " ")
 		clipboardText = strings.ReplaceAll(clipboardText, "\r", " ")
 		clipboardText = strings.TrimSpace(clipboardText)
-		
+
 		m.input += clipboardText
 	}
 	return m, nil
@@ -85,7 +85,7 @@ func (m TextInputModel) handlePaste() (TextInputModel, tea.Cmd) {
 // getClipboardContent gets content from the system clipboard
 func getClipboardContent() string {
 	var cmd *exec.Cmd
-	
+
 	switch runtime.GOOS {
 	case "darwin": // macOS
 		cmd = exec.Command("pbpaste")
@@ -103,26 +103,26 @@ func getClipboardContent() string {
 	default:
 		return ""
 	}
-	
+
 	if cmd == nil {
 		return ""
 	}
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
-	
+
 	return string(output)
 }
 
 func (m TextInputModel) View() string {
 	var content strings.Builder
-	
+
 	// Title
 	title := titleStyle.Render(m.prompt)
 	content.WriteString(title + "\n\n")
-	
+
 	// Input field with placeholder
 	inputDisplay := m.input
 	if inputDisplay == "" && m.placeholder != "" {
@@ -130,20 +130,20 @@ func (m TextInputModel) View() string {
 	} else {
 		inputDisplay = normalStyle.Render(inputDisplay)
 	}
-	
+
 	// Input box
 	inputBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		Padding(0, 1).
 		Width(m.width - 4).
 		Render(inputDisplay + "│")
-	
+
 	content.WriteString(inputBox + "\n\n")
-	
+
 	// Help text
 	help := helpStyle.Render("Enter to confirm • Esc to cancel • Ctrl+V/Cmd+V to paste")
 	content.WriteString(help)
-	
+
 	return content.String()
 }
 
@@ -177,61 +177,61 @@ func (m ConfirmationModel) Update(msg tea.Msg) (ConfirmationModel, tea.Cmd) {
 				return m, m.onConfirm(m.selected)
 			}
 			return m, BackToPreviousView()
-			
+
 		case "left", "right", "h", "l":
 			m.selected = !m.selected
-			
+
 		case "y", "Y":
 			m.selected = true
 			if m.onConfirm != nil {
 				return m, m.onConfirm(true)
 			}
 			return m, BackToPreviousView()
-			
+
 		case "n", "N", "esc":
 			m.selected = false
 			if m.onConfirm != nil {
 				return m, m.onConfirm(false)
 			}
 			return m, BackToPreviousView()
-			
+
 		case "ctrl+c":
 			return m, tea.Quit
 		}
 	}
-	
+
 	return m, nil
 }
 
 func (m ConfirmationModel) View() string {
 	var content strings.Builder
-	
+
 	// Title
 	title := titleStyle.Render("Confirmation")
 	content.WriteString(title + "\n\n")
-	
+
 	// Message
 	content.WriteString(normalStyle.Render(m.message) + "\n\n")
-	
+
 	// Buttons
 	yesStyle := normalStyle
 	noStyle := normalStyle
-	
+
 	if m.selected {
 		yesStyle = selectedStyle
 	} else {
 		noStyle = selectedStyle
 	}
-	
+
 	yesButton := yesStyle.Render("[ Yes ]")
 	noButton := noStyle.Render("[ No ]")
-	
+
 	buttons := lipgloss.JoinHorizontal(lipgloss.Left, yesButton, "  ", noButton)
 	content.WriteString(buttons + "\n\n")
-	
+
 	// Help text
 	help := helpStyle.Render("Y/N or ←/→ to select • Enter to confirm • Esc to cancel")
 	content.WriteString(help)
-	
+
 	return content.String()
 }
