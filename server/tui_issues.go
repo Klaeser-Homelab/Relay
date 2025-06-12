@@ -90,20 +90,23 @@ func (m IssueListModel) Update(msg tea.Msg) (IssueListModel, tea.Cmd) {
 			return m, SwitchToView(ViewREPL, context)
 			
 		case "o":
-			// Close issue (default to completed for now)
+			// Close issue with reason selection
 			if len(m.issues) > 0 {
 				selectedIssue := m.issues[m.selected]
-				err := m.issueManager.CloseIssue(selectedIssue.ID, "completed")
-				if err != nil {
-					// Handle error
-					return m, nil
+				closeData := CloseReasonData{
+					IssueID:   selectedIssue.ID,
+					IssueTitle: selectedIssue.Content,
+					OnConfirm: func(reason string) tea.Cmd {
+						err := m.issueManager.CloseIssue(selectedIssue.ID, reason)
+						if err != nil {
+							// Handle error - could show error message
+							return BackToPreviousView()
+						}
+						// Return to issue list
+						return SwitchToView(ViewIssueList, nil)
+					},
 				}
-				// Refresh issue list
-				m.issues = m.issueManager.ListIssues(m.filterStatus, m.filterLabel)
-				if m.selected >= len(m.issues) && len(m.issues) > 0 {
-					m.selected = len(m.issues) - 1
-				}
-				return m, nil
+				return m, SwitchToView(ViewCloseReason, closeData)
 			}
 			
 		case "d":
@@ -656,12 +659,20 @@ func (m IssueDetailModel) handleDelete() (IssueDetailModel, tea.Cmd) {
 }
 
 func (m IssueDetailModel) handleClose() (IssueDetailModel, tea.Cmd) {
-	// For now, default to "completed". In the future, this could show a dialog for close reason selection
-	err := m.replSession.issueManager.CloseIssue(m.issue.ID, "completed")
-	if err == nil {
-		return m, SwitchToView(ViewIssueList, nil)
+	closeData := CloseReasonData{
+		IssueID:   m.issue.ID,
+		IssueTitle: m.issue.Content,
+		OnConfirm: func(reason string) tea.Cmd {
+			err := m.replSession.issueManager.CloseIssue(m.issue.ID, reason)
+			if err != nil {
+				// Handle error - could show error message
+				return BackToPreviousView()
+			}
+			// Return to issue list
+			return SwitchToView(ViewIssueList, nil)
+		},
 	}
-	return m, BackToPreviousView()
+	return m, SwitchToView(ViewCloseReason, closeData)
 }
 
 func (m IssueDetailModel) View() string {

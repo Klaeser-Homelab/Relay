@@ -18,6 +18,7 @@ const (
 	ViewLLMConfig
 	ViewIssueTrackerConfig
 	ViewLabelEditor
+	ViewCloseReason
 )
 
 // Main TUI model that orchestrates different views
@@ -36,6 +37,7 @@ type TUIModel struct {
 	textInputModel    TextInputModel
 	confirmationModel ConfirmationModel
 	labelEditorModel  LabelEditorModel
+	closeReasonModel  CloseReasonModel
 	
 	// Config components
 	configMenuModel        ConfigMenuModel
@@ -169,6 +171,14 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.labelEditorModel.height = m.height
 				}
 			}
+		case ViewCloseReason:
+			if msg.Data != nil {
+				if closeData, ok := msg.Data.(CloseReasonData); ok {
+					m.closeReasonModel = NewCloseReasonModel(closeData)
+					m.closeReasonModel.width = m.width
+					m.closeReasonModel.height = m.height
+				}
+			}
 		case ViewREPL:
 			// Return to REPL, set context if provided
 			if msg.Data != nil {
@@ -208,6 +218,8 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issueTrackerConfigModel, cmd = m.issueTrackerConfigModel.Update(msg)
 	case ViewLabelEditor:
 		m.labelEditorModel, cmd = m.labelEditorModel.Update(msg)
+	case ViewCloseReason:
+		m.closeReasonModel, cmd = m.closeReasonModel.Update(msg)
 	}
 	
 	return m, cmd
@@ -233,6 +245,8 @@ func (m TUIModel) View() string {
 		return m.issueTrackerConfigModel.View()
 	case ViewLabelEditor:
 		return m.labelEditorModel.View()
+	case ViewCloseReason:
+		return m.closeReasonModel.View()
 	}
 	
 	return "Unknown view"
@@ -256,6 +270,12 @@ type TextInputData struct {
 type ConfirmationData struct {
 	Message   string
 	OnConfirm func(bool) tea.Cmd
+}
+
+type CloseReasonData struct {
+	IssueID   int
+	IssueTitle string
+	OnConfirm func(string) tea.Cmd // Callback with selected close reason
 }
 
 // Helper functions for creating view switch commands
