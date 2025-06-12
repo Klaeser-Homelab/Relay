@@ -350,7 +350,7 @@ func (r *REPLSession) printHelp() {
 	fmt.Println()
 	fmt.Println("Issue Management:")
 	fmt.Println("  /issue <content>    Capture a new development issue")
-	fmt.Println("  /issues             Interactive issue browser (↑↓ navigate, Enter select, d delete)")
+	fmt.Println("  /issues             Interactive issue browser (↑↓ navigate, Enter select, c close)")
 	fmt.Println("  /issues status <s>  Filter issues by status (captured, in-progress, done, archived)")
 	fmt.Println("  /issues category <c> Filter issues by category (feature, bug, refactor, tech-debt)")
 	fmt.Println("  /issue show <id>    Show detailed information about an issue")
@@ -360,6 +360,7 @@ func (r *REPLSession) printHelp() {
 	fmt.Println("Interactive Issue Actions (when issue selected):")
 	fmt.Println("  c  Chat about issue with Claude")
 	fmt.Println("  r  Rename the issue")
+	fmt.Println("  o  Close the issue (with completion status)")
 	fmt.Println("  d  Delete the issue")
 	fmt.Println("  p  Push issue to GitHub")
 	fmt.Println()
@@ -617,6 +618,40 @@ func (r *REPLSession) handleIssueActionMenu(issue *Issue) error {
 			actionMenu.issue = issue
 			actionMenu.Display()
 			
+		case "close":
+			// Get close reason
+			closeReason, err := CloseReasonDialog()
+			if err != nil {
+				fmt.Printf("Close cancelled: %v\n", err)
+				fmt.Println("Press any key to continue...")
+				SetSttyRaw()
+				reader := bufio.NewReader(os.Stdin)
+				reader.ReadByte()
+				SetSttyCooked()
+				actionMenu.Display()
+			} else {
+				// Close the issue
+				err := r.issueManager.CloseIssue(issue.ID, closeReason)
+				if err != nil {
+					fmt.Printf("Error closing issue: %v\n", err)
+					fmt.Println("Press any key to continue...")
+					SetSttyRaw()
+					reader := bufio.NewReader(os.Stdin)
+					reader.ReadByte()
+					SetSttyCooked()
+					actionMenu.Display()
+				} else {
+					fmt.Printf("✅ Issue #%d closed as %s\n", issue.ID, closeReason)
+					
+					// Send update to GitHub
+					err := r.handleIssueCloseToGitHub(issue, closeReason)
+					if err != nil {
+						fmt.Printf("Warning: Failed to update GitHub: %v\n", err)
+					}
+					return nil // Exit to issue list
+				}
+			}
+			
 		case "delete":
 			confirmed, err := ConfirmationDialog(fmt.Sprintf("Delete issue #%d: \"%s\"?", issue.ID, issue.Content))
 			if err != nil {
@@ -772,6 +807,47 @@ func (r *REPLSession) handleIssuePushToGitHub(issue *Issue) error {
 	}
 	
 	fmt.Printf("\n%sGitHub Push Result:%s\n%s\n", ColorGreen, ColorReset, response)
+	fmt.Println("\nPress any key to continue...")
+	SetSttyRaw()
+	reader := bufio.NewReader(os.Stdin)
+	reader.ReadByte()
+	
+	return nil
+}
+
+// handleIssueCloseToGitHub closes the issue on GitHub with the specified reason
+func (r *REPLSession) handleIssueCloseToGitHub(issue *Issue, closeReason string) error {
+	SetSttyCooked()
+	fmt.Print(ShowCursor)
+	
+	fmt.Printf("%sClosing Issue #%d on GitHub as %s...%s\n", ColorYellow, issue.ID, closeReason, ColorReset)
+	
+	// Map close reasons to GitHub close states
+	var githubState string
+	var stateReason string
+	
+	switch closeReason {
+	case "completed":
+		githubState = "closed"
+		stateReason = "completed"
+	case "not planned":
+		githubState = "closed"
+		stateReason = "not_planned"
+	case "duplicate":
+		githubState = "closed"
+		stateReason = "not_planned" // GitHub doesn't have a specific duplicate reason
+	}
+	
+	// Close GitHub issue via Claude
+	githubPrompt := fmt.Sprintf("Close the GitHub issue for this development item using the GitHub CLI (gh). Use the following details:\n\nTitle: %s\nClose State: %s\nState Reason: %s\nClose Reason: %s\n\nFirst find the GitHub issue by title, then close it with the appropriate state and reason. If the issue doesn't exist on GitHub, just report that.", 
+		issue.Content, githubState, stateReason, closeReason)
+	
+	response, err := r.claudeCLI.SendCommand(githubPrompt)
+	if err != nil {
+		return fmt.Errorf("failed to close issue on GitHub: %w", err)
+	}
+	
+	fmt.Printf("\n%sGitHub Close Result:%s\n%s\n", ColorGreen, ColorReset, response)
 	fmt.Println("\nPress any key to continue...")
 	SetSttyRaw()
 	reader := bufio.NewReader(os.Stdin)

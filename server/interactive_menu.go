@@ -110,6 +110,7 @@ func (m *InteractiveMenu) Display() {
 		fmt.Printf("%s\n", strings.Repeat("-", 9))
 		fmt.Printf("%-8s %s\n", "↑/↓", "Navigate")
 		fmt.Printf("%-8s %s\n", "Enter", "Select item")
+		fmt.Printf("%-8s %s\n", "c", "Close item")
 		fmt.Printf("%-8s %s\n", "d", "Delete item")
 		fmt.Printf("%-8s %s\n", "q", "Quit")
 	}
@@ -165,7 +166,10 @@ func (m *InteractiveMenu) Run() (*MenuItem, string, error) {
 		case 13: // Enter
 			selected := &m.items[m.selectedIdx]
 			return selected, "select", nil
-		case 'd', 'D': // Delete
+		case 'c', 'C': // Close
+			selected := &m.items[m.selectedIdx]
+			return selected, "close", nil
+		case 'd', 'D': // Delete (backward compatibility)
 			selected := &m.items[m.selectedIdx]
 			return selected, "delete", nil
 		case 'q', 'Q': // Quit
@@ -276,6 +280,7 @@ func (m *IssueActionMenu) Display() {
 	// Action menu items with consistent key/description alignment
 	fmt.Printf("%-*s %s\n", ActionWidth+1, "c", "Chat about this issue with Claude")
 	fmt.Printf("%-*s %s\n", ActionWidth+1, "r", "Rename this issue")
+	fmt.Printf("%-*s %s\n", ActionWidth+1, "o", "Close this issue")
 	fmt.Printf("%-*s %s\n", ActionWidth+1, "d", "Delete this issue")
 	fmt.Printf("%-*s %s\n", ActionWidth+1, "p", "Push this issue to GitHub")
 	fmt.Printf("%-*s %s\n", ActionWidth+1, "q", "Back to issue list")
@@ -308,6 +313,8 @@ func (m *IssueActionMenu) Run() (string, error) {
 			return "chat", nil
 		case 'r', 'R':
 			return "rename", nil
+		case 'o', 'O':
+			return "close", nil
 		case 'd', 'D':
 			return "delete", nil
 		case 'p', 'P':
@@ -335,3 +342,34 @@ func TextInput(prompt string) (string, error) {
 	return strings.TrimSpace(input), nil
 }
 
+// CloseReasonDialog shows a menu to select close reason
+func CloseReasonDialog() (string, error) {
+	reasons := []MenuItem{
+		{ID: 1, Content: "Close as completed - Issue was successfully resolved"},
+		{ID: 2, Content: "Close as not planned - Issue will not be implemented"},
+		{ID: 3, Content: "Close as duplicate - Issue is a duplicate of another"},
+	}
+	
+	menu := NewInteractiveMenu("How do you want to close this issue?", reasons)
+	menu.showHelp = false // Hide navigation help for simplicity
+	
+	selected, action, err := menu.Run()
+	if err != nil {
+		return "", fmt.Errorf("close reason selection error: %w", err)
+	}
+	
+	if selected == nil || action == "quit" {
+		return "", fmt.Errorf("close cancelled")
+	}
+	
+	switch selected.ID {
+	case 1:
+		return "completed", nil
+	case 2:
+		return "not planned", nil
+	case 3:
+		return "duplicate", nil
+	default:
+		return "", fmt.Errorf("invalid selection")
+	}
+}

@@ -337,6 +337,42 @@ func (im *IssueManager) UpdateIssueSyncStatus(id int, status string) error {
 	return fmt.Errorf("issue with ID %d not found", id)
 }
 
+// CloseIssue closes an issue with a specific completion status
+func (im *IssueManager) CloseIssue(id int, closeReason string) error {
+	// Validate close reason
+	validReasons := []string{"completed", "not planned", "duplicate"}
+	isValid := false
+	for _, validReason := range validReasons {
+		if closeReason == validReason {
+			isValid = true
+			break
+		}
+	}
+
+	if !isValid {
+		return fmt.Errorf("invalid close reason '%s'. Valid reasons: %s", closeReason, strings.Join(validReasons, ", "))
+	}
+
+	// Find and update issue status to done with close reason
+	for i := range im.issues {
+		if im.issues[i].ID == id {
+			oldStatus := im.issues[i].Status
+			im.issues[i].Status = "done"
+
+			// Save to file
+			if err := im.saveIssues(); err != nil {
+				// Rollback change
+				im.issues[i].Status = oldStatus
+				return fmt.Errorf("failed to save issue close: %w", err)
+			}
+
+			return nil
+		}
+	}
+
+	return fmt.Errorf("issue with ID %d not found", id)
+}
+
 // UpdateIssueGitHubData updates the GitHub-related data for an issue
 func (im *IssueManager) UpdateIssueGitHubData(id int, githubID *int, githubURL string, lastSyncedAt *time.Time) error {
 	// Find and update issue
@@ -418,7 +454,7 @@ func (im *IssueManager) GetSyncStatus() string {
 	return "Synced"
 }
 
-// DeleteIssue removes an issue by ID
+// DeleteIssue removes an issue by ID (kept for backward compatibility)
 func (im *IssueManager) DeleteIssue(id int) error {
 	for i, issue := range im.issues {
 		if issue.ID == id {
