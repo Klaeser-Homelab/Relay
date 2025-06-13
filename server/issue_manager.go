@@ -1,533 +1,85 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// Issue represents a development issue captured by the user
+// Issue represents a GitHub issue
 type Issue struct {
-	ID           int        `json:"id"`
-	Content      string     `json:"content"`
-	Timestamp    time.Time  `json:"timestamp"`
-	Status       string     `json:"status"`         // "captured", "in-progress", "done", "archived"
-	Labels       []string   `json:"labels"`         // "bug", "enhancement"
-	Prompt       string     `json:"prompt"`         // Custom prompt for Claude Code
-	SyncStatus   string     `json:"sync_status"`    // "Synced", "Syncing", "Sync Error"
-	GitHubID     *int       `json:"github_id"`      // GitHub issue number (nil if not synced)
-	GitHubURL    string     `json:"github_url"`     // GitHub issue URL
-	LastSyncedAt *time.Time `json:"last_synced_at"` // Last successful sync timestamp
+	Number    int        `json:"number"`     // GitHub issue number (primary ID)
+	Title     string     `json:"title"`      // GitHub issue title
+	Body      string     `json:"body"`       // GitHub issue body/description
+	State     string     `json:"state"`      // "open" or "closed"
+	Labels    []string   `json:"labels"`     // GitHub labels
+	CreatedAt time.Time  `json:"created_at"` // GitHub creation timestamp
+	UpdatedAt time.Time  `json:"updated_at"` // GitHub last update timestamp
+	ClosedAt  *time.Time `json:"closed_at"`  // GitHub closure timestamp (null for open issues)
+	URL       string     `json:"html_url"`   // GitHub issue URL
 }
 
-// IssueManager manages issues for a specific project
+// IssueManager manages GitHub issues for a specific project
 type IssueManager struct {
-	issues        []Issue
-	projectPath   string
-	nextID        int
-	dataFile      string
+	githubService *GitHubService
 	configManager *ConfigManager
+	projectPath   string
 }
 
 // NewIssueManager creates a new IssueManager for the specified project
 func NewIssueManager(projectPath string, configManager *ConfigManager) (*IssueManager, error) {
-	// Create .relay directory if it doesn't exist
-	relayDir := filepath.Join(projectPath, ".relay")
-	if err := os.MkdirAll(relayDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create .relay directory: %w", err)
-	}
-
-	dataFile := filepath.Join(relayDir, "issues.json")
-
-	im := &IssueManager{
-		issues:        []Issue{},
-		projectPath:   projectPath,
-		nextID:        1,
-		dataFile:      dataFile,
-		configManager: configManager,
-	}
-
-	// Load existing issues from file
-	if err := im.loadIssues(); err != nil {
-		return nil, fmt.Errorf("failed to load existing issues: %w", err)
-	}
-
-	return im, nil
-}
-
-// loadIssues loads issues from the JSON file
-func (im *IssueManager) loadIssues() error {
-	// Check if file exists
-	if _, err := os.Stat(im.dataFile); os.IsNotExist(err) {
-		// File doesn't exist, start fresh
-		return nil
-	}
-
-	// Read file
-	data, err := ioutil.ReadFile(im.dataFile)
-	if err != nil {
-		return fmt.Errorf("failed to read issues file: %w", err)
-	}
-
-	// Handle empty file
-	if len(data) == 0 {
-		return nil
-	}
-
-	// Parse JSON
-	var issues []Issue
-	if err := json.Unmarshal(data, &issues); err != nil {
-		return fmt.Errorf("failed to parse issues JSON: %w", err)
-	}
-
-	im.issues = issues
-
-	// Set nextID to be greater than the highest existing ID
-	if len(issues) > 0 {
-		maxID := 0
-		for _, issue := range issues {
-			if issue.ID > maxID {
-				maxID = issue.ID
-			}
-		}
-		im.nextID = maxID + 1
-	}
-
-	return nil
-}
-
-// saveIssues saves issues to the JSON file
-func (im *IssueManager) saveIssues() error {
-	// Convert to JSON
-	data, err := json.MarshalIndent(im.issues, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal issues to JSON: %w", err)
-	}
-
-	// Write to temporary file first for atomic operation
-	tempFile := im.dataFile + ".tmp"
-	if err := ioutil.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temporary issues file: %w", err)
-	}
-
-	// Atomic rename
-	if err := os.Rename(tempFile, im.dataFile); err != nil {
-		os.Remove(tempFile) // Clean up temp file
-		return fmt.Errorf("failed to save issues file: %w", err)
-	}
-
-	return nil
-}
-
-// AddIssue adds a new issue
-func (im *IssueManager) AddIssue(content string) (*Issue, error) {
-	// Validate content
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return nil, fmt.Errorf("issue content cannot be empty")
-	}
-
-	if len(content) > 1000 {
-		return nil, fmt.Errorf("issue content too long (max 1000 characters)")
-	}
-
-	// Create new issue
-	issue := Issue{
-		ID:         im.nextID,
-		Content:    content,
-		Timestamp:  time.Now(),
-		Status:     "captured",
-		Labels:     categorizeIssue(content), // Returns []string now
-		SyncStatus: "Synced",                 // Default to synced for new issues
-	}
-
-	// Add to issues slice
-	im.issues = append(im.issues, issue)
-	im.nextID++
-
-	// Save to file
-	if err := im.saveIssues(); err != nil {
-		// Rollback in-memory change
-		im.issues = im.issues[:len(im.issues)-1]
-		im.nextID--
-		return nil, fmt.Errorf("failed to save issue: %w", err)
-	}
-
-	return &issue, nil
-}
-
-// GetIssue retrieves an issue by ID
-func (im *IssueManager) GetIssue(id int) (*Issue, error) {
-	for i := range im.issues {
-		if im.issues[i].ID == id {
-			return &im.issues[i], nil
-		}
-	}
-	return nil, fmt.Errorf("issue with ID %d not found", id)
-}
-
-// UpdateIssueContent updates the content of an issue
-func (im *IssueManager) UpdateIssueContent(id int, content string) error {
-	// Validate content
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return fmt.Errorf("issue content cannot be empty")
-	}
-
-	if len(content) > 1000 {
-		return fmt.Errorf("issue content too long (max 1000 characters)")
-	}
-
-	// Find and update issue
-	for i := range im.issues {
-		if im.issues[i].ID == id {
-			oldContent := im.issues[i].Content
-			oldLabels := im.issues[i].Labels
-			im.issues[i].Content = content
-			// Re-categorize the issue based on new content
-			im.issues[i].Labels = categorizeIssue(content)
-
-			// Save to file
-			if err := im.saveIssues(); err != nil {
-				// Rollback changes
-				im.issues[i].Content = oldContent
-				im.issues[i].Labels = oldLabels
-				return fmt.Errorf("failed to save issue content update: %w", err)
-			}
-
-			return nil
-		}
-	}
-
-	return fmt.Errorf("issue with ID %d not found", id)
-}
-
-// UpdateIssuePrompt updates the prompt of an issue
-func (im *IssueManager) UpdateIssuePrompt(id int, prompt string) error {
-	// Find and update issue
-	for i := range im.issues {
-		if im.issues[i].ID == id {
-			oldPrompt := im.issues[i].Prompt
-			im.issues[i].Prompt = prompt
-
-			// Save to file
-			if err := im.saveIssues(); err != nil {
-				// Rollback change
-				im.issues[i].Prompt = oldPrompt
-				return fmt.Errorf("failed to save issue prompt update: %w", err)
-			}
-
-			return nil
-		}
-	}
-
-	return fmt.Errorf("issue with ID %d not found", id)
-}
-
-// UpdateIssueStatus updates the status of an issue
-func (im *IssueManager) UpdateIssueStatus(id int, status string) error {
-	// Validate status
-	validStatuses := []string{"captured", "in-progress", "done", "archived"}
-	isValid := false
-	for _, validStatus := range validStatuses {
-		if status == validStatus {
-			isValid = true
-			break
-		}
-	}
-
-	if !isValid {
-		return fmt.Errorf("invalid status '%s'. Valid statuses: %s", status, strings.Join(validStatuses, ", "))
-	}
-
-	// Find and update issue
-	for i := range im.issues {
-		if im.issues[i].ID == id {
-			oldStatus := im.issues[i].Status
-			im.issues[i].Status = status
-
-			// Save to file
-			if err := im.saveIssues(); err != nil {
-				// Rollback change
-				im.issues[i].Status = oldStatus
-				return fmt.Errorf("failed to save issue status update: %w", err)
-			}
-
-			return nil
-		}
-	}
-
-	return fmt.Errorf("issue with ID %d not found", id)
-}
-
-// UpdateIssueLabels updates the labels of an issue
-func (im *IssueManager) UpdateIssueLabels(id int, labels []string) error {
-	// Validate labels
-	validLabels := []string{"bug", "enhancement"}
-	for _, label := range labels {
-		isValid := false
-		for _, validLabel := range validLabels {
-			if label == validLabel {
-				isValid = true
-				break
-			}
-		}
-		if !isValid {
-			return fmt.Errorf("invalid label '%s'. Valid labels: %s", label, strings.Join(validLabels, ", "))
-		}
-	}
-
-	// Find and update issue
-	for i := range im.issues {
-		if im.issues[i].ID == id {
-			oldLabels := im.issues[i].Labels
-			im.issues[i].Labels = labels
-
-			// Save to file
-			if err := im.saveIssues(); err != nil {
-				// Rollback change
-				im.issues[i].Labels = oldLabels
-				return fmt.Errorf("failed to save issue labels update: %w", err)
-			}
-
-			return nil
-		}
-	}
-
-	return fmt.Errorf("issue with ID %d not found", id)
-}
-
-// UpdateIssueSyncStatus updates the sync status of an issue
-func (im *IssueManager) UpdateIssueSyncStatus(id int, status string) error {
-	// Validate sync status
-	validStatuses := []string{"Synced", "Syncing", "Sync Error"}
-	isValid := false
-	for _, validStatus := range validStatuses {
-		if status == validStatus {
-			isValid = true
-			break
-		}
-	}
-
-	if !isValid {
-		return fmt.Errorf("invalid sync status '%s'. Valid statuses: %s", status, strings.Join(validStatuses, ", "))
-	}
-
-	// Find and update issue
-	for i := range im.issues {
-		if im.issues[i].ID == id {
-			oldStatus := im.issues[i].SyncStatus
-			im.issues[i].SyncStatus = status
-
-			// Save to file
-			if err := im.saveIssues(); err != nil {
-				// Rollback change
-				im.issues[i].SyncStatus = oldStatus
-				return fmt.Errorf("failed to save issue sync status update: %w", err)
-			}
-
-			return nil
-		}
-	}
-
-	return fmt.Errorf("issue with ID %d not found", id)
-}
-
-// CloseIssue closes an issue with a specific completion status
-func (im *IssueManager) CloseIssue(id int, closeReason string) error {
-	// Validate close reason
-	validReasons := []string{"completed", "not planned", "duplicate"}
-	isValid := false
-	for _, validReason := range validReasons {
-		if closeReason == validReason {
-			isValid = true
-			break
-		}
-	}
-
-	if !isValid {
-		return fmt.Errorf("invalid close reason '%s'. Valid reasons: %s", closeReason, strings.Join(validReasons, ", "))
-	}
-
-	// Find and update issue status to done with close reason
-	for i := range im.issues {
-		if im.issues[i].ID == id {
-			oldStatus := im.issues[i].Status
-			im.issues[i].Status = "done"
-
-			// Save to file
-			if err := im.saveIssues(); err != nil {
-				// Rollback change
-				im.issues[i].Status = oldStatus
-				return fmt.Errorf("failed to save issue close: %w", err)
-			}
-
-			// If issue is synced to GitHub, close it there too
-			if im.issues[i].GitHubID != nil {
-				if err := im.closeIssueOnGitHub(&im.issues[i], closeReason); err != nil {
-					// Log error but don't fail the local close operation
-					fmt.Printf("Warning: Failed to close issue on GitHub: %v\n", err)
-				}
-			}
-
-			return nil
-		}
-	}
-
-	return fmt.Errorf("issue with ID %d not found", id)
-}
-
-// closeIssueOnGitHub closes the corresponding GitHub issue
-func (im *IssueManager) closeIssueOnGitHub(issue *Issue, closeReason string) error {
-	if issue.GitHubID == nil {
-		return fmt.Errorf("issue is not synced to GitHub")
-	}
-
-	// Create GitHub service
-	githubService := NewGitHubService(im.configManager, im.projectPath)
-
-	// Check if GitHub CLI is authenticated
+	githubService := NewGitHubService(configManager, projectPath)
+	
+	// Verify GitHub authentication
 	authenticated, err := githubService.IsAuthenticated()
 	if err != nil {
-		return fmt.Errorf("failed to check GitHub authentication: %w", err)
+		return nil, fmt.Errorf("failed to check GitHub authentication: %w", err)
 	}
 	if !authenticated {
-		return fmt.Errorf("GitHub CLI is not authenticated. Run 'gh auth login' first")
+		return nil, fmt.Errorf("GitHub CLI is not authenticated. Run 'gh auth login' first")
 	}
 
-	// Close the issue on GitHub
-	err = githubService.UpdateIssue(*issue.GitHubID, "", "", "closed", nil)
-	if err != nil {
-		return fmt.Errorf("failed to close GitHub issue #%d: %w", *issue.GitHubID, err)
-	}
-
-	fmt.Printf("Successfully closed GitHub issue #%d (%s)\n", *issue.GitHubID, closeReason)
-	return nil
-}
-
-// UpdateIssueGitHubData updates the GitHub-related data for an issue
-func (im *IssueManager) UpdateIssueGitHubData(id int, githubID *int, githubURL string, lastSyncedAt *time.Time) error {
-	// Find and update issue
-	for i := range im.issues {
-		if im.issues[i].ID == id {
-			oldGitHubID := im.issues[i].GitHubID
-			oldGitHubURL := im.issues[i].GitHubURL
-			oldLastSyncedAt := im.issues[i].LastSyncedAt
-
-			im.issues[i].GitHubID = githubID
-			im.issues[i].GitHubURL = githubURL
-			im.issues[i].LastSyncedAt = lastSyncedAt
-
-			// Save to file
-			if err := im.saveIssues(); err != nil {
-				// Rollback changes
-				im.issues[i].GitHubID = oldGitHubID
-				im.issues[i].GitHubURL = oldGitHubURL
-				im.issues[i].LastSyncedAt = oldLastSyncedAt
-				return fmt.Errorf("failed to save issue GitHub data update: %w", err)
-			}
-
-			return nil
+	// Auto-detect and configure GitHub repository if not set
+	githubConfig := configManager.GetGitHubConfig()
+	if githubConfig.Repository == "" {
+		repo, err := githubService.DetectRepository()
+		if err != nil {
+			return nil, fmt.Errorf("failed to detect repository: %w", err)
+		}
+		err = configManager.UpdateGitHubRepository(repo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update repository config: %w", err)
 		}
 	}
 
-	return fmt.Errorf("issue with ID %d not found", id)
+	return &IssueManager{
+		githubService: githubService,
+		configManager: configManager,
+		projectPath:   projectPath,
+	}, nil
 }
 
-// GetIssueByGitHubID retrieves an issue by its GitHub ID
-func (im *IssueManager) GetIssueByGitHubID(githubID int) (*Issue, error) {
-	for i := range im.issues {
-		if im.issues[i].GitHubID != nil && *im.issues[i].GitHubID == githubID {
-			return &im.issues[i], nil
-		}
-	}
-	return nil, fmt.Errorf("issue with GitHub ID %d not found", githubID)
-}
-
-// GetUnsyncedIssues returns issues that need to be synced to GitHub
-func (im *IssueManager) GetUnsyncedIssues() []Issue {
-	var unsynced []Issue
-	for _, issue := range im.issues {
-		if issue.GitHubID == nil || issue.SyncStatus != "Synced" {
-			unsynced = append(unsynced, issue)
-		}
-	}
-	return unsynced
-}
-
-// GetSyncStatus calculates the overall sync status based on all issues
-func (im *IssueManager) GetSyncStatus() string {
-	if len(im.issues) == 0 {
-		return "Synced"
-	}
-
-	syncingCount := 0
-	errorCount := 0
-	syncedCount := 0
-
-	for _, issue := range im.issues {
-		switch issue.SyncStatus {
-		case "Syncing":
-			syncingCount++
-		case "Sync Error":
-			errorCount++
-		case "Synced":
-			syncedCount++
-		}
-	}
-
-	// Priority: Error > Syncing > Synced
-	if errorCount > 0 {
-		return "Sync Error"
-	}
-	if syncingCount > 0 {
-		return "Syncing"
-	}
-	return "Synced"
-}
-
-// DeleteIssue removes an issue by ID (kept for backward compatibility)
-func (im *IssueManager) DeleteIssue(id int) error {
-	for i, issue := range im.issues {
-		if issue.ID == id {
-			// Remove from slice
-			im.issues = append(im.issues[:i], im.issues[i+1:]...)
-
-			// Save to file
-			if err := im.saveIssues(); err != nil {
-				// Rollback change
-				im.issues = append(im.issues[:i], append([]Issue{issue}, im.issues[i:]...)...)
-				return fmt.Errorf("failed to save after deleting issue: %w", err)
-			}
-
-			return nil
-		}
-	}
-
-	return fmt.Errorf("issue with ID %d not found", id)
-}
-
-// ListIssues returns all issues, optionally filtered by status or label
+// ListIssues returns GitHub issues for the repository (open issues + closed issues from last 24 hours)
 func (im *IssueManager) ListIssues(filterStatus, filterLabel string) []Issue {
+	issues, err := im.githubService.ListIssues()
+	if err != nil {
+		fmt.Printf("Error fetching issues from GitHub: %v\n", err)
+		return []Issue{}
+	}
+
 	var filteredIssues []Issue
-	now := time.Now()
-	oneDayAgo := now.Add(-24 * time.Hour)
 
-	for _, issue := range im.issues {
-		// Filter out closed issues older than one day
-		if issue.Status == "done" && issue.Timestamp.Before(oneDayAgo) {
-			continue
-		}
-
-		// Apply status filter
-		if filterStatus != "" && issue.Status != filterStatus {
-			continue
+	for _, issue := range issues {
+		// Apply status filter (GitHub uses "open"/"closed")
+		if filterStatus != "" {
+			if filterStatus == "open" && issue.State != "open" {
+				continue
+			}
+			if filterStatus == "closed" && issue.State != "closed" {
+				continue
+			}
 		}
 
 		// Apply label filter
@@ -547,39 +99,196 @@ func (im *IssueManager) ListIssues(filterStatus, filterLabel string) []Issue {
 		filteredIssues = append(filteredIssues, issue)
 	}
 
-	// Sort with closed issues at the bottom, then by timestamp within each group
+	// Sort issues: open issues first (highest number first), then closed issues (highest number first)
 	sort.Slice(filteredIssues, func(i, j int) bool {
-		// First, sort by status: non-closed issues come first
-		isClosed_i := filteredIssues[i].Status == "done"
-		isClosed_j := filteredIssues[j].Status == "done"
+		isClosed_i := filteredIssues[i].State == "closed"
+		isClosed_j := filteredIssues[j].State == "closed"
 
+		// Open issues come first
 		if isClosed_i != isClosed_j {
-			return !isClosed_i // Non-closed issues come first
+			return !isClosed_i // Open issues (false) come before closed issues (true)
 		}
 
-		// Within the same status group, sort by timestamp (newest first)
-		return filteredIssues[i].Timestamp.After(filteredIssues[j].Timestamp)
+		// Within the same state group, sort by issue number (highest first)
+		return filteredIssues[i].Number > filteredIssues[j].Number
 	})
 
 	return filteredIssues
 }
 
-// GetStats returns statistics about issues
+// AddIssue creates a new GitHub issue
+func (im *IssueManager) AddIssue(title string) (*Issue, error) {
+	// Validate title
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return nil, fmt.Errorf("issue title cannot be empty")
+	}
+
+	if len(title) > 256 {
+		return nil, fmt.Errorf("issue title too long (max 256 characters)")
+	}
+
+	// Auto-categorize and create labels
+	labels := categorizeIssue(title)
+
+	// Create issue on GitHub
+	issueNumber, err := im.githubService.CreateIssue(title, "", labels)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GitHub issue: %w", err)
+	}
+
+	// Fetch the created issue to get complete data
+	issue, err := im.GetIssue(issueNumber)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch created issue: %w", err)
+	}
+
+	return issue, nil
+}
+
+// GetIssue retrieves a GitHub issue by number
+func (im *IssueManager) GetIssue(number int) (*Issue, error) {
+	issue, err := im.githubService.GetIssue(number)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch issue #%d from GitHub: %w", number, err)
+	}
+	return issue, nil
+}
+
+// UpdateIssueTitle updates the title of a GitHub issue
+func (im *IssueManager) UpdateIssueTitle(number int, title string) error {
+	// Validate title
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("issue title cannot be empty")
+	}
+
+	if len(title) > 256 {
+		return fmt.Errorf("issue title too long (max 256 characters)")
+	}
+
+	// Update issue on GitHub
+	err := im.githubService.UpdateIssue(number, title, "", "", nil)
+	if err != nil {
+		return fmt.Errorf("failed to update GitHub issue #%d: %w", number, err)
+	}
+
+	return nil
+}
+
+// UpdateIssueBody updates the body/description of a GitHub issue
+func (im *IssueManager) UpdateIssueBody(number int, body string) error {
+	// Update issue on GitHub
+	err := im.githubService.UpdateIssue(number, "", body, "", nil)
+	if err != nil {
+		return fmt.Errorf("failed to update GitHub issue #%d body: %w", number, err)
+	}
+
+	return nil
+}
+
+// UpdateIssueStatus updates the status of a GitHub issue (open/closed)
+func (im *IssueManager) UpdateIssueStatus(number int, state string) error {
+	// Validate state (GitHub only supports "open" and "closed")
+	if state != "open" && state != "closed" {
+		return fmt.Errorf("invalid state '%s'. Valid states: open, closed", state)
+	}
+
+	// Update issue on GitHub
+	err := im.githubService.UpdateIssue(number, "", "", state, nil)
+	if err != nil {
+		return fmt.Errorf("failed to update GitHub issue #%d state: %w", number, err)
+	}
+
+	return nil
+}
+
+// UpdateIssueLabels updates the labels of a GitHub issue
+func (im *IssueManager) UpdateIssueLabels(number int, labels []string) error {
+	// Update issue on GitHub
+	err := im.githubService.UpdateIssue(number, "", "", "", labels)
+	if err != nil {
+		return fmt.Errorf("failed to update GitHub issue #%d labels: %w", number, err)
+	}
+
+	return nil
+}
+
+// DeleteIssue deletes a GitHub issue
+func (im *IssueManager) DeleteIssue(number int) error {
+	// Note: GitHub doesn't support deleting issues via API, so we close it instead
+	err := im.UpdateIssueStatus(number, "closed")
+	if err != nil {
+		return fmt.Errorf("failed to close issue #%d (GitHub doesn't support deletion): %w", number, err)
+	}
+	
+	// Add a comment indicating this was meant to be deleted
+	commentErr := im.githubService.AddComment(number, "This issue was marked for deletion and has been closed instead.")
+	if commentErr != nil {
+		fmt.Printf("Warning: Failed to add deletion comment to GitHub issue #%d: %v\n", number, commentErr)
+	}
+	
+	return nil
+}
+
+// CloseIssue closes a GitHub issue with a specific completion status
+func (im *IssueManager) CloseIssue(number int, closeReason string) error {
+	// Validate close reason
+	validReasons := []string{"completed", "not planned", "duplicate"}
+	isValid := false
+	for _, validReason := range validReasons {
+		if closeReason == validReason {
+			isValid = true
+			break
+		}
+	}
+
+	if !isValid {
+		return fmt.Errorf("invalid close reason '%s'. Valid reasons: %s", closeReason, strings.Join(validReasons, ", "))
+	}
+
+	// Close the issue on GitHub
+	err := im.githubService.UpdateIssue(number, "", "", "closed", nil)
+	if err != nil {
+		return fmt.Errorf("failed to close GitHub issue #%d: %w", number, err)
+	}
+
+	// Add a comment with the close reason
+	comment := fmt.Sprintf("Closed as: %s", closeReason)
+	commentErr := im.githubService.AddComment(number, comment)
+	if commentErr != nil {
+		// Log error but don't fail the close operation
+		fmt.Printf("Warning: Failed to add close reason comment to GitHub issue #%d: %v\n", number, commentErr)
+	}
+
+	return nil
+}
+
+// GetSyncStatus returns sync status (always "Synced" since we're using GitHub as source of truth)
+func (im *IssueManager) GetSyncStatus() string {
+	return "Synced"
+}
+
+
+// GetStats returns statistics about GitHub issues
 func (im *IssueManager) GetStats() map[string]int {
+	issues := im.ListIssues("", "")
+	
 	stats := map[string]int{
-		"total":       len(im.issues),
-		"captured":    0,
-		"in-progress": 0,
-		"done":        0,
-		"archived":    0,
-		"bug":         0,
+		"total":  len(issues),
+		"open":   0,
+		"closed": 0,
+		"bug":    0,
 		"enhancement": 0,
 	}
 
-	for _, issue := range im.issues {
-		stats[issue.Status]++
+	for _, issue := range issues {
+		stats[issue.State]++
 		// Count each label
 		for _, label := range issue.Labels {
+			if _, exists := stats[label]; !exists {
+				stats[label] = 0
+			}
 			stats[label]++
 		}
 	}
@@ -632,17 +341,13 @@ func formatRelativeTime(t time.Time) string {
 	}
 }
 
-// getStatusEmoji returns an emoji for the given status
-func getStatusEmoji(status string) string {
-	switch status {
-	case "captured":
-		return "💡"
-	case "in-progress":
-		return "🔄"
-	case "done":
+// getStatusEmoji returns an emoji for the given GitHub status
+func getStatusEmoji(state string) string {
+	switch state {
+	case "open":
+		return "🔓"
+	case "closed":
 		return "✅"
-	case "archived":
-		return "📦"
 	default:
 		return "❓"
 	}
@@ -660,7 +365,7 @@ func getLabelEmoji(label string) string {
 	}
 }
 
-// FormatIssueList formats a list of issues for display
+// FormatIssueList formats a list of GitHub issues for display
 func (im *IssueManager) FormatIssueList(issues []Issue, showDetails bool) string {
 	if len(issues) == 0 {
 		return "No issues found."
@@ -670,8 +375,8 @@ func (im *IssueManager) FormatIssueList(issues []Issue, showDetails bool) string
 	output.WriteString(fmt.Sprintf("📋 Issues (%d):\n", len(issues)))
 
 	for _, issue := range issues {
-		statusEmoji := getStatusEmoji(issue.Status)
-		relativeTime := formatRelativeTime(issue.Timestamp)
+		statusEmoji := getStatusEmoji(issue.State)
+		relativeTime := formatRelativeTime(issue.CreatedAt)
 
 		// Format labels
 		labelsStr := strings.Join(issue.Labels, ", ")
@@ -679,31 +384,26 @@ func (im *IssueManager) FormatIssueList(issues []Issue, showDetails bool) string
 			labelsStr = "no labels"
 		}
 
-		displayStatus := issue.Status
-		if issue.Status == "done" {
-			displayStatus = "closed"
-		}
-
 		if showDetails {
 			output.WriteString(fmt.Sprintf("  #%d [%s] %s (%s) - %s\n",
-				issue.ID, labelsStr, issue.Content, displayStatus, relativeTime))
+				issue.Number, labelsStr, issue.Title, issue.State, relativeTime))
 		} else {
-			// Truncate long content for list view
-			content := issue.Content
-			if len(content) > 60 {
-				content = content[:57] + "..."
+			// Truncate long title for list view
+			title := issue.Title
+			if len(title) > 60 {
+				title = title[:57] + "..."
 			}
 			output.WriteString(fmt.Sprintf("  #%d %s %s [%s] (%s) - %s\n",
-				issue.ID, statusEmoji, content, labelsStr, displayStatus, relativeTime))
+				issue.Number, statusEmoji, title, labelsStr, issue.State, relativeTime))
 		}
 	}
 
 	return output.String()
 }
 
-// FormatIssueDetails formats detailed information about a single issue
+// FormatIssueDetails formats detailed information about a single GitHub issue
 func (im *IssueManager) FormatIssueDetails(issue *Issue) string {
-	statusEmoji := getStatusEmoji(issue.Status)
+	statusEmoji := getStatusEmoji(issue.State)
 
 	// Format labels
 	labelsStr := strings.Join(issue.Labels, ", ")
@@ -711,17 +411,19 @@ func (im *IssueManager) FormatIssueDetails(issue *Issue) string {
 		labelsStr = "no labels"
 	}
 
-	displayStatus := issue.Status
-	if issue.Status == "done" {
-		displayStatus = "closed"
-	}
-
 	var output strings.Builder
-	output.WriteString(fmt.Sprintf("📋 Issue #%d\n", issue.ID))
-	output.WriteString(fmt.Sprintf("Content: %s\n", issue.Content))
-	output.WriteString(fmt.Sprintf("Status: %s %s\n", statusEmoji, displayStatus))
+	output.WriteString(fmt.Sprintf("📋 Issue #%d\n", issue.Number))
+	output.WriteString(fmt.Sprintf("Title: %s\n", issue.Title))
+	if issue.Body != "" {
+		output.WriteString(fmt.Sprintf("Description: %s\n", issue.Body))
+	}
+	output.WriteString(fmt.Sprintf("Status: %s %s\n", statusEmoji, issue.State))
 	output.WriteString(fmt.Sprintf("Labels: %s\n", labelsStr))
-	output.WriteString(fmt.Sprintf("Created: %s (%s)\n", issue.Timestamp.Format("2006-01-02 15:04:05"), formatRelativeTime(issue.Timestamp)))
+	output.WriteString(fmt.Sprintf("Created: %s (%s)\n", issue.CreatedAt.Format("2006-01-02 15:04:05"), formatRelativeTime(issue.CreatedAt)))
+	if issue.ClosedAt != nil {
+		output.WriteString(fmt.Sprintf("Closed: %s (%s)\n", issue.ClosedAt.Format("2006-01-02 15:04:05"), formatRelativeTime(*issue.ClosedAt)))
+	}
+	output.WriteString(fmt.Sprintf("URL: %s\n", issue.URL))
 
 	return output.String()
 }

@@ -18,14 +18,15 @@ type GitHubService struct {
 
 // GitHubIssue represents a GitHub issue from the API
 type GitHubIssue struct {
-	Number    int       `json:"number"`
-	Title     string    `json:"title"`
-	Body      string    `json:"body"`
-	State     string    `json:"state"` // "open" or "closed"
-	Labels    []string  `json:"labels"`
-	URL       string    `json:"url"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Number    int        `json:"number"`
+	Title     string     `json:"title"`
+	Body      string     `json:"body"`
+	State     string     `json:"state"` // "open" or "closed"
+	Labels    []string   `json:"labels"`
+	URL       string     `json:"url"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	ClosedAt  *time.Time `json:"closed_at"`
 }
 
 // NewGitHubService creates a new GitHub service instance
@@ -97,48 +98,105 @@ func (gs *GitHubService) ValidateRepository(repo string) error {
 	return nil
 }
 
-// FetchIssues retrieves all issues from the GitHub repository
-func (gs *GitHubService) FetchIssues() ([]GitHubIssue, error) {
+// ListIssues retrieves all issues from the GitHub repository
+func (gs *GitHubService) ListIssues() ([]Issue, error) {
 	config := gs.configManager.GetGitHubConfig()
 	if config.Repository == "" {
 		return nil, fmt.Errorf("GitHub repository not configured")
 	}
 
-	// Fetch both open and closed issues
-	cmd := exec.Command("gh", "issue", "list",
+	// Calculate date for 24 hours ago for filtering closed issues
+	oneDayAgo := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+	
+	// Fetch open issues and closed issues from last 24 hours
+	// We need to make two separate calls since GitHub search syntax doesn't support OR for state
+	var allIssues []Issue
+	
+	// First, get all open issues
+	openCmd := exec.Command("gh", "issue", "list",
 		"--repo", config.Repository,
-		"--state", "all",
-		"--json", "number,title,body,state,labels,url,createdAt,updatedAt",
-		"--limit", "1000") // Adjust limit as needed
-	cmd.Dir = gs.projectPath
-
-	output, err := cmd.Output()
+		"--state", "open",
+		"--json", "number,title,body,state,labels,url,createdAt,updatedAt,closedAt",
+		"--limit", "1000")
+	openCmd.Dir = gs.projectPath
+	
+	openOutput, err := openCmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch GitHub issues: %w", err)
+		return nil, fmt.Errorf("failed to fetch open GitHub issues: %w", err)
 	}
-
-	var rawIssues []map[string]interface{}
-	if err := json.Unmarshal(output, &rawIssues); err != nil {
-		return nil, fmt.Errorf("failed to parse GitHub issues JSON: %w", err)
+	
+	var openIssues []map[string]interface{}
+	if err := json.Unmarshal(openOutput, &openIssues); err != nil {
+		return nil, fmt.Errorf("failed to parse open GitHub issues JSON: %w", err)
 	}
-
-	var issues []GitHubIssue
-	for _, raw := range rawIssues {
-		issue, err := gs.parseGitHubIssue(raw)
+	
+	// Convert open issues
+	for _, raw := range openIssues {
+		githubIssue, err := gs.parseGitHubIssue(raw)
 		if err != nil {
 			continue // Skip malformed issues
 		}
-		issues = append(issues, issue)
+		issue := Issue{
+			Number:    githubIssue.Number,
+			Title:     githubIssue.Title,
+			Body:      githubIssue.Body,
+			State:     githubIssue.State,
+			Labels:    githubIssue.Labels,
+			CreatedAt: githubIssue.CreatedAt,
+			UpdatedAt: githubIssue.UpdatedAt,
+			ClosedAt:  githubIssue.ClosedAt,
+			URL:       githubIssue.URL,
+		}
+		allIssues = append(allIssues, issue)
+	}
+	
+	// Second, get closed issues from last 24 hours using search
+	closedCmd := exec.Command("gh", "issue", "list",
+		"--repo", config.Repository,
+		"--state", "closed",
+		"--search", fmt.Sprintf("closed:>%s", oneDayAgo),
+		"--json", "number,title,body,state,labels,url,createdAt,updatedAt,closedAt",
+		"--limit", "1000")
+	closedCmd.Dir = gs.projectPath
+
+	closedOutput, err := closedCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch closed GitHub issues: %w", err)
 	}
 
-	return issues, nil
+	var closedIssues []map[string]interface{}
+	if err := json.Unmarshal(closedOutput, &closedIssues); err != nil {
+		return nil, fmt.Errorf("failed to parse closed GitHub issues JSON: %w", err)
+	}
+
+	// Convert closed issues
+	for _, raw := range closedIssues {
+		githubIssue, err := gs.parseGitHubIssue(raw)
+		if err != nil {
+			continue // Skip malformed issues
+		}
+		issue := Issue{
+			Number:    githubIssue.Number,
+			Title:     githubIssue.Title,
+			Body:      githubIssue.Body,
+			State:     githubIssue.State,
+			Labels:    githubIssue.Labels,
+			CreatedAt: githubIssue.CreatedAt,
+			UpdatedAt: githubIssue.UpdatedAt,
+			ClosedAt:  githubIssue.ClosedAt,
+			URL:       githubIssue.URL,
+		}
+		allIssues = append(allIssues, issue)
+	}
+
+	return allIssues, nil
 }
 
-// CreateIssue creates a new issue on GitHub
-func (gs *GitHubService) CreateIssue(title, body string, labels []string) (*GitHubIssue, error) {
+// CreateIssue creates a new issue on GitHub and returns the issue number
+func (gs *GitHubService) CreateIssue(title, body string, labels []string) (int, error) {
 	config := gs.configManager.GetGitHubConfig()
 	if config.Repository == "" {
-		return nil, fmt.Errorf("GitHub repository not configured")
+		return 0, fmt.Errorf("GitHub repository not configured")
 	}
 
 	args := []string{"issue", "create", "--repo", config.Repository, "--title", title}
@@ -158,7 +216,7 @@ func (gs *GitHubService) CreateIssue(title, body string, labels []string) (*GitH
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GitHub issue: %s", string(output))
+		return 0, fmt.Errorf("failed to create GitHub issue: %s", string(output))
 	}
 
 	// The output from gh issue create is just the URL
@@ -167,26 +225,16 @@ func (gs *GitHubService) CreateIssue(title, body string, labels []string) (*GitH
 	// Extract issue number from URL (e.g., https://github.com/owner/repo/issues/123)
 	parts := strings.Split(issueURL, "/")
 	if len(parts) < 1 {
-		return nil, fmt.Errorf("invalid issue URL format: %s", issueURL)
+		return 0, fmt.Errorf("invalid issue URL format: %s", issueURL)
 	}
 
 	issueNumberStr := parts[len(parts)-1]
 	issueNumber := 0
 	if _, err := fmt.Sscanf(issueNumberStr, "%d", &issueNumber); err != nil {
-		return nil, fmt.Errorf("failed to parse issue number from URL: %s", issueURL)
+		return 0, fmt.Errorf("failed to parse issue number from URL: %s", issueURL)
 	}
 
-	// Return basic issue info - we could fetch full details with another call if needed
-	issue := GitHubIssue{
-		Number: issueNumber,
-		Title:  title,
-		Body:   body,
-		State:  "open",
-		Labels: labels,
-		URL:    issueURL,
-	}
-
-	return &issue, nil
+	return issueNumber, nil
 }
 
 // UpdateIssue updates an existing GitHub issue
@@ -261,6 +309,69 @@ func (gs *GitHubService) UpdateIssue(number int, title, body string, state strin
 	return nil
 }
 
+// GetIssue retrieves a single GitHub issue by number
+func (gs *GitHubService) GetIssue(number int) (*Issue, error) {
+	config := gs.configManager.GetGitHubConfig()
+	if config.Repository == "" {
+		return nil, fmt.Errorf("GitHub repository not configured")
+	}
+
+	cmd := exec.Command("gh", "issue", "view", strconv.Itoa(number),
+		"--repo", config.Repository,
+		"--json", "number,title,body,state,labels,url,createdAt,updatedAt,closedAt")
+	cmd.Dir = gs.projectPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch GitHub issue #%d: %w", number, err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(output, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse GitHub issue JSON: %w", err)
+	}
+
+	githubIssue, err := gs.parseGitHubIssue(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse GitHub issue: %w", err)
+	}
+
+	// Convert GitHubIssue to Issue
+	issue := &Issue{
+		Number:    githubIssue.Number,
+		Title:     githubIssue.Title,
+		Body:      githubIssue.Body,
+		State:     githubIssue.State,
+		Labels:    githubIssue.Labels,
+		CreatedAt: githubIssue.CreatedAt,
+		UpdatedAt: githubIssue.UpdatedAt,
+		ClosedAt:  githubIssue.ClosedAt,
+		URL:       githubIssue.URL,
+	}
+
+	return issue, nil
+}
+
+// AddComment adds a comment to a GitHub issue
+func (gs *GitHubService) AddComment(number int, comment string) error {
+	config := gs.configManager.GetGitHubConfig()
+	if config.Repository == "" {
+		return fmt.Errorf("GitHub repository not configured")
+	}
+
+	cmd := exec.Command("gh", "issue", "comment", strconv.Itoa(number),
+		"--repo", config.Repository,
+		"--body", comment)
+	cmd.Dir = gs.projectPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to add comment to GitHub issue #%d: %s", number, string(output))
+	}
+
+	return nil
+}
+
 // parseGitHubIssue converts raw JSON data to GitHubIssue struct
 func (gs *GitHubService) parseGitHubIssue(raw map[string]interface{}) (GitHubIssue, error) {
 	issue := GitHubIssue{}
@@ -284,7 +395,7 @@ func (gs *GitHubService) parseGitHubIssue(raw map[string]interface{}) (GitHubIss
 
 	// Parse state
 	if state, ok := raw["state"].(string); ok {
-		issue.State = state
+		issue.State = strings.ToLower(state)
 	}
 
 	// Parse URL
@@ -316,27 +427,29 @@ func (gs *GitHubService) parseGitHubIssue(raw map[string]interface{}) (GitHubIss
 		}
 	}
 
+	// Parse closedAt (can be null for open issues)
+	if closedStr, ok := raw["closedAt"].(string); ok && closedStr != "" {
+		if closed, err := time.Parse(time.RFC3339, closedStr); err == nil {
+			issue.ClosedAt = &closed
+		}
+	}
+
 	return issue, nil
 }
 
-// MapLocalStatusToGitHub converts local issue status to GitHub state
-func (gs *GitHubService) MapLocalStatusToGitHub(localStatus string) string {
-	switch localStatus {
-	case "done", "archived":
+// MapLocalStatusToGitHub converts any status to GitHub state (legacy compatibility)
+func (gs *GitHubService) MapLocalStatusToGitHub(status string) string {
+	switch status {
+	case "closed":
 		return "closed"
 	default:
 		return "open"
 	}
 }
 
-// MapGitHubStateToLocal converts GitHub state to local issue status
+// MapGitHubStateToLocal returns GitHub state as-is (no longer mapping to local statuses)
 func (gs *GitHubService) MapGitHubStateToLocal(githubState string) string {
-	switch githubState {
-	case "closed":
-		return "done"
-	default:
-		return "captured"
-	}
+	return githubState // Return as-is: "open" or "closed"
 }
 
 // MapLocalLabelsToGitHub converts local labels to GitHub labels (1:1 mapping)

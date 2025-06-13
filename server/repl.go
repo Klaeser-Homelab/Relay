@@ -18,7 +18,6 @@ type REPLSession struct {
 	gitOps         *GitOperations
 	issueManager   *IssueManager
 	configManager  *ConfigManager
-	running        bool
 	logger         *log.Logger
 }
 
@@ -85,7 +84,6 @@ func NewREPLSession(projectName string) (*REPLSession, error) {
 		gitOps:         gitOps,
 		issueManager:   issueManager,
 		configManager:  configManager,
-		running:        true,
 		logger:         logger,
 	}, nil
 }
@@ -104,113 +102,9 @@ func (r *REPLSession) Start() error {
 	return err
 }
 
-// StartLegacy begins the old REPL loop (kept for reference)
-func (r *REPLSession) StartLegacy() error {
-	defer r.Close()
 
-	// Print welcome message
-	r.printWelcome()
 
-	// Create scanner for user input
-	scanner := bufio.NewScanner(os.Stdin)
 
-	// Main REPL loop
-	for r.running {
-		// Print prompt
-		fmt.Printf("[%s]> ", r.currentProject.Name)
-
-		// Read user input
-		if !scanner.Scan() {
-			break // EOF or error
-		}
-
-		input := strings.TrimSpace(scanner.Text())
-		if input == "" {
-			continue
-		}
-
-		// Process the command
-		err := r.processCommand(input)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("input error: %w", err)
-	}
-
-	return nil
-}
-
-// processCommand handles user input and executes the appropriate action
-func (r *REPLSession) processCommand(input string) error {
-	// Handle REPL commands (starting with /)
-	if strings.HasPrefix(input, "/") {
-		return r.handleREPLCommand(input)
-	}
-
-	// Handle direct Claude commands
-	return r.handleClaudeCommand(input)
-}
-
-// handleREPLCommand processes commands that start with /
-func (r *REPLSession) handleREPLCommand(input string) error {
-	parts := strings.Fields(input)
-	if len(parts) == 0 {
-		return fmt.Errorf("empty command")
-	}
-
-	command := parts[0]
-
-	switch command {
-	case "/help", "/h":
-		r.printHelp()
-	case "/exit", "/quit", "/q":
-		fmt.Println("Goodbye!")
-		r.running = false
-	case "/status":
-		return r.handleStatus()
-	case "/commit":
-		return r.handleCommit()
-	case "/push":
-		return r.handlePush()
-	case "/commit-push":
-		return r.handleCommitPush()
-	case "/list":
-		return r.handleListProjects()
-	case "/switch":
-		if len(parts) < 2 {
-			return fmt.Errorf("usage: /switch <project-name>")
-		}
-		return r.handleSwitchProject(parts[1])
-	case "/pwd":
-		r.handlePwd()
-	case "/info":
-		r.handleProjectInfo()
-	case "/issue":
-		return r.handleIssueCommand(parts)
-	case "/issues":
-		return r.handleListIssues(parts)
-	default:
-		return fmt.Errorf("unknown command: %s (type /help for available commands)", command)
-	}
-
-	return nil
-}
-
-// handleClaudeCommand sends input directly to Claude
-func (r *REPLSession) handleClaudeCommand(input string) error {
-	fmt.Printf("🤖 Sending to Claude: %s\n", input)
-
-	response, err := r.llmManager.GetExecutingProvider().SendMessage(context.Background(), input)
-	if err != nil {
-		return fmt.Errorf("Claude error: %w", err)
-	}
-
-	fmt.Printf("Claude: %s\n", response)
-	return nil
-}
 
 // REPL command handlers
 func (r *REPLSession) handleStatus() error {
@@ -327,51 +221,7 @@ func (r *REPLSession) handleProjectInfo() {
 	}
 }
 
-// Helper methods
-func (r *REPLSession) printWelcome() {
-	fmt.Printf("🚀 Relay REPL v1.0 - Project: %s\n", r.currentProject.Name)
-	fmt.Printf("📁 Working directory: %s\n", r.currentProject.Path)
-	fmt.Println("Type /help for commands, /exit to quit")
-	fmt.Println()
-}
 
-func (r *REPLSession) printHelp() {
-	fmt.Println("Available REPL Commands:")
-	fmt.Println("  /help, /h           Show this help message")
-	fmt.Println("  /exit, /quit, /q    Exit the REPL")
-	fmt.Println("  /status             Show current project and git status")
-	fmt.Println("  /commit             Smart commit with AI-generated message")
-	fmt.Println("  /push               Push to current branch")
-	fmt.Println("  /commit-push        Smart commit and push")
-	fmt.Println("  /list               List all projects")
-	fmt.Println("  /switch <name>      Switch to a different project")
-	fmt.Println("  /pwd                Show current working directory")
-	fmt.Println("  /info               Show detailed project information")
-	fmt.Println()
-	fmt.Println("Issue Management:")
-	fmt.Println("  /issue <content>    Capture a new development issue")
-	fmt.Println("  /issues             Interactive issue browser (↑↓ navigate, Enter select, c close)")
-	fmt.Println("  /issues status <s>  Filter issues by status (captured, in-progress, done, archived)")
-	fmt.Println("  /issues category <c> Filter issues by category (feature, bug, refactor, tech-debt)")
-	fmt.Println("  /issue show <id>    Show detailed information about an issue")
-	fmt.Println("  /issue status <id> <status>  Update issue status")
-	fmt.Println("  /issue delete <id>  Delete an issue")
-	fmt.Println()
-	fmt.Println("Interactive Issue Actions (when issue selected):")
-	fmt.Println("  c  Chat about issue with Claude")
-	fmt.Println("  r  Rename the issue")
-	fmt.Println("  o  Close the issue (with completion status)")
-	fmt.Println("  d  Delete the issue")
-	fmt.Println("  p  Push issue to GitHub")
-	fmt.Println()
-	fmt.Println("Direct Claude Commands:")
-	fmt.Println("  <any text>          Send directly to Claude AI")
-	fmt.Println("  Examples:")
-	fmt.Println("    analyze this file")
-	fmt.Println("    what changed since last commit?")
-	fmt.Println("    explain the git history")
-	fmt.Println()
-}
 
 // handleIssueCommand handles the /issue command and its subcommands
 func (r *REPLSession) handleIssueCommand(parts []string) error {
@@ -405,9 +255,9 @@ func (r *REPLSession) handleAddIssue(content string) error {
 	var issueMsg string
 	if len(issue.Labels) > 0 {
 		labelsStr := strings.Join(issue.Labels, ", ")
-		issueMsg = fmt.Sprintf("📋 Issue #%d captured: \"%s\" [%s]\n", issue.ID, issue.Content, labelsStr)
+		issueMsg = fmt.Sprintf("📋 Issue #%d created: \"%s\" [%s]\n", issue.Number, issue.Title, labelsStr)
 	} else {
-		issueMsg = fmt.Sprintf("📋 Issue #%d captured: \"%s\"\n", issue.ID, issue.Content)
+		issueMsg = fmt.Sprintf("📋 Issue #%d created: \"%s\"\n", issue.Number, issue.Title)
 	}
 	fmt.Print(issueMsg)
 	return nil
@@ -446,26 +296,22 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 	// Convert issues to menu items
 	var menuItems []MenuItem
 	for _, issue := range issues {
-		statusEmoji := getStatusEmoji(issue.Status)
-		relativeTime := formatRelativeTime(issue.Timestamp)
+		statusEmoji := getStatusEmoji(issue.State)
+		relativeTime := formatRelativeTime(issue.CreatedAt)
 
 		// Format with labels only if they exist
 		var content string
-		displayStatus := issue.Status
-		if issue.Status == "done" {
-			displayStatus = "closed"
-		}
 
 		if len(issue.Labels) > 0 {
 			content = fmt.Sprintf("#%-2d %s %s [%s] (%s) - %s",
-				issue.ID, statusEmoji, issue.Content, strings.Join(issue.Labels, ","), displayStatus, relativeTime)
+				issue.Number, statusEmoji, issue.Title, strings.Join(issue.Labels, ","), issue.State, relativeTime)
 		} else {
 			content = fmt.Sprintf("#%-2d %s %s (%s) - %s",
-				issue.ID, statusEmoji, issue.Content, displayStatus, relativeTime)
+				issue.Number, statusEmoji, issue.Title, issue.State, relativeTime)
 		}
 
 		menuItems = append(menuItems, MenuItem{
-			ID:      issue.ID,
+			ID:      issue.Number,
 			Content: content,
 			Data:    issue, // Store the full issue for later use
 		})
@@ -513,26 +359,23 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 			// Update menu items
 			menuItems = nil
 			for _, issue := range issues {
-				statusEmoji := getStatusEmoji(issue.Status)
+				statusEmoji := getStatusEmoji(issue.State)
 				// categoryEmoji removed
-				relativeTime := formatRelativeTime(issue.Timestamp)
+				relativeTime := formatRelativeTime(issue.CreatedAt)
 
-				displayStatus := issue.Status
-				if issue.Status == "done" {
-					displayStatus = "closed"
-				}
+				displayStatus := issue.State
 
 				var content string
 				if len(issue.Labels) > 0 {
 					content = fmt.Sprintf("#%-2d %s %s [%s] (%s) - %s",
-						issue.ID, statusEmoji, issue.Content, strings.Join(issue.Labels, ","), displayStatus, relativeTime)
+						issue.Number, statusEmoji, issue.Title, strings.Join(issue.Labels, ","), displayStatus, relativeTime)
 				} else {
 					content = fmt.Sprintf("#%-2d %s %s (%s) - %s",
-						issue.ID, statusEmoji, issue.Content, displayStatus, relativeTime)
+						issue.Number, statusEmoji, issue.Title, displayStatus, relativeTime)
 				}
 
 				menuItems = append(menuItems, MenuItem{
-					ID:      issue.ID,
+					ID:      issue.Number,
 					Content: content,
 					Data:    issue,
 				})
@@ -545,13 +388,13 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 
 		case "delete":
 			// Confirm deletion
-			confirmed, err := ConfirmationDialog(fmt.Sprintf("Delete issue #%d: \"%s\"?", issue.ID, issue.Content))
+			confirmed, err := ConfirmationDialog(fmt.Sprintf("Delete issue #%d: \"%s\"?", issue.Number, issue.Title))
 			if err != nil {
 				return fmt.Errorf("confirmation error: %w", err)
 			}
 
 			if confirmed {
-				err := r.issueManager.DeleteIssue(issue.ID)
+				err := r.issueManager.DeleteIssue(issue.Number)
 				if err != nil {
 					fmt.Printf("Error deleting issue: %v\n", err)
 					fmt.Println("Press any key to continue...")
@@ -560,7 +403,7 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 					reader.ReadByte()
 					SetSttyCooked()
 				} else {
-					fmt.Printf("✅ Issue #%d deleted successfully.\n", issue.ID)
+					fmt.Printf("✅ Issue #%d deleted successfully.\n", issue.Number)
 				}
 
 				// Refresh the issue list
@@ -572,25 +415,22 @@ func (r *REPLSession) handleListIssues(parts []string) error {
 				// Update menu items
 				menuItems = nil
 				for _, issue := range issues {
-					statusEmoji := getStatusEmoji(issue.Status)
-					relativeTime := formatRelativeTime(issue.Timestamp)
+					statusEmoji := getStatusEmoji(issue.State)
+					relativeTime := formatRelativeTime(issue.CreatedAt)
 
-					displayStatus := issue.Status
-					if issue.Status == "done" {
-						displayStatus = "closed"
-					}
+					displayStatus := issue.State
 
 					var content string
 					if len(issue.Labels) > 0 {
 						content = fmt.Sprintf("#%-2d %s %s [%s] (%s) - %s",
-							issue.ID, statusEmoji, issue.Content, strings.Join(issue.Labels, ","), displayStatus, relativeTime)
+							issue.Number, statusEmoji, issue.Title, strings.Join(issue.Labels, ","), displayStatus, relativeTime)
 					} else {
 						content = fmt.Sprintf("#%-2d %s %s (%s) - %s",
-							issue.ID, statusEmoji, issue.Content, displayStatus, relativeTime)
+							issue.Number, statusEmoji, issue.Title, displayStatus, relativeTime)
 					}
 
 					menuItems = append(menuItems, MenuItem{
-						ID:      issue.ID,
+						ID:      issue.Number,
 						Content: content,
 						Data:    issue,
 					})
@@ -646,7 +486,7 @@ func (r *REPLSession) handleIssueActionMenu(issue *Issue) error {
 				actionMenu.Display()
 			} else {
 				// Close the issue
-				err := r.issueManager.CloseIssue(issue.ID, closeReason)
+				err := r.issueManager.CloseIssue(issue.Number, closeReason)
 				if err != nil {
 					fmt.Printf("Error closing issue: %v\n", err)
 					fmt.Println("Press any key to continue...")
@@ -656,23 +496,23 @@ func (r *REPLSession) handleIssueActionMenu(issue *Issue) error {
 					SetSttyCooked()
 					actionMenu.Display()
 				} else {
-					fmt.Printf("✅ Issue #%d closed as %s\n", issue.ID, closeReason)
+					fmt.Printf("✅ Issue #%d closed as %s\n", issue.Number, closeReason)
 					return nil // Exit to issue list
 				}
 			}
 
 		case "delete":
-			confirmed, err := ConfirmationDialog(fmt.Sprintf("Delete issue #%d: \"%s\"?", issue.ID, issue.Content))
+			confirmed, err := ConfirmationDialog(fmt.Sprintf("Delete issue #%d: \"%s\"?", issue.Number, issue.Title))
 			if err != nil {
 				return fmt.Errorf("confirmation error: %w", err)
 			}
 
 			if confirmed {
-				err := r.issueManager.DeleteIssue(issue.ID)
+				err := r.issueManager.DeleteIssue(issue.Number)
 				if err != nil {
 					return fmt.Errorf("failed to delete issue: %w", err)
 				}
-				fmt.Printf("✅ Issue #%d deleted successfully.\n", issue.ID)
+				fmt.Printf("✅ Issue #%d deleted successfully.\n", issue.Number)
 				return nil // Exit to issue list
 			}
 			// If not confirmed, redisplay the action menu
@@ -698,28 +538,25 @@ func (r *REPLSession) handleIssueChatWithClaude(issue *Issue) error {
 	fmt.Print(ShowCursor)
 	clearScreen()
 
-	fmt.Printf("%sChat about Issue #%d: %s%s\n", ColorBold, issue.ID, issue.Content, ColorReset)
-	displayStatus := issue.Status
-	if issue.Status == "done" {
-		displayStatus = "closed"
-	}
+	fmt.Printf("%sChat about Issue #%d: %s%s\n", ColorBold, issue.Number, issue.Title, ColorReset)
+	displayStatus := issue.State
 
 	if len(issue.Labels) > 0 {
 		fmt.Printf("Status: %s %s | Labels: %s\n\n",
-			getStatusEmoji(issue.Status), displayStatus, strings.Join(issue.Labels, ","))
+			getStatusEmoji(issue.State), displayStatus, strings.Join(issue.Labels, ","))
 	} else {
 		fmt.Printf("Status: %s %s\n\n",
-			getStatusEmoji(issue.Status), displayStatus)
+			getStatusEmoji(issue.State), displayStatus)
 	}
 
 	// Start context with issue information
 	var contextPrompt string
 	if len(issue.Labels) > 0 {
 		contextPrompt = fmt.Sprintf("I want to discuss this development issue:\n\nIssue: %s\nStatus: %s\nLabels: %s\n\nPlease help me think through this issue. What would you like to discuss about it?",
-			issue.Content, displayStatus, strings.Join(issue.Labels, ","))
+			issue.Title, displayStatus, strings.Join(issue.Labels, ","))
 	} else {
 		contextPrompt = fmt.Sprintf("I want to discuss this development issue:\n\nIssue: %s\nStatus: %s\n\nPlease help me think through this issue. What would you like to discuss about it?",
-			issue.Content, displayStatus)
+			issue.Title, displayStatus)
 	}
 
 	// Send initial context to Claude
@@ -770,7 +607,7 @@ func (r *REPLSession) handleIssueChatWithClaude(issue *Issue) error {
 
 // handleIssueRename allows renaming an issue
 func (r *REPLSession) handleIssueRename(issue *Issue) error {
-	newContent, err := TextInput(fmt.Sprintf("Rename issue #%d (current: \"%s\")", issue.ID, issue.Content))
+	newContent, err := TextInput(fmt.Sprintf("Rename issue #%d (current: \"%s\")", issue.Number, issue.Title))
 	if err != nil {
 		return fmt.Errorf("failed to get new content: %w", err)
 	}
@@ -780,16 +617,15 @@ func (r *REPLSession) handleIssueRename(issue *Issue) error {
 		return nil
 	}
 
-	err = r.issueManager.UpdateIssueContent(issue.ID, newContent)
+	err = r.issueManager.UpdateIssueTitle(issue.Number, newContent)
 	if err != nil {
 		return fmt.Errorf("failed to rename issue: %w", err)
 	}
 
-	// Update the issue struct with new content
-	issue.Content = newContent
-	issue.Labels = categorizeIssue(newContent) // Re-categorize
+	// Update the issue struct with new title
+	issue.Title = newContent
 
-	fmt.Printf("✅ Issue #%d renamed to: \"%s\"\n", issue.ID, newContent)
+	fmt.Printf("✅ Issue #%d renamed to: \"%s\"\n", issue.Number, newContent)
 	fmt.Println("Press any key to continue...")
 	SetSttyRaw()
 	reader := bufio.NewReader(os.Stdin)
@@ -803,21 +639,18 @@ func (r *REPLSession) handleIssuePushToGitHub(issue *Issue) error {
 	SetSttyCooked()
 	fmt.Print(ShowCursor)
 
-	fmt.Printf("%sPushing Issue #%d to GitHub...%s\n", ColorYellow, issue.ID, ColorReset)
+	fmt.Printf("%sPushing Issue #%d to GitHub...%s\n", ColorYellow, issue.Number, ColorReset)
 
 	// Create GitHub issue via Claude
 	var githubPrompt string
-	displayStatus := issue.Status
-	if issue.Status == "done" {
-		displayStatus = "closed"
-	}
+	displayStatus := issue.State
 
 	if len(issue.Labels) > 0 {
 		githubPrompt = fmt.Sprintf("Create a GitHub issue for this development item. Use the GitHub CLI (gh) to create the issue.\n\nTitle: %s\nLabels: %s\nStatus: %s\n\nPlease create the issue and provide the issue URL.",
-			issue.Content, strings.Join(issue.Labels, ","), displayStatus)
+			issue.Title, strings.Join(issue.Labels, ","), displayStatus)
 	} else {
 		githubPrompt = fmt.Sprintf("Create a GitHub issue for this development item. Use the GitHub CLI (gh) to create the issue.\n\nTitle: %s\nStatus: %s\n\nPlease create the issue and provide the issue URL.",
-			issue.Content, displayStatus)
+			issue.Title, displayStatus)
 	}
 
 	response, err := r.llmManager.GetExecutingProvider().SendMessage(context.Background(), githubPrompt)
@@ -900,7 +733,7 @@ func (r *REPLSession) handleIssueDelete(parts []string) error {
 		return err
 	}
 
-	fmt.Printf("🗑️ Deleted issue #%d: \"%s\"\n", id, issue.Content)
+	fmt.Printf("🗑️ Deleted issue #%d: \"%s\"\n", id, issue.Title)
 	return nil
 }
 

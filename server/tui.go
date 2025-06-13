@@ -75,7 +75,7 @@ func InitTUI(replSession *REPLSession) TUIModel {
 	issueTrackerConfigModel.height = defaultHeight
 
 	return TUIModel{
-		currentView:             ViewREPL,
+		currentView:             ViewIssueList,
 		width:                   defaultWidth,
 		height:                  defaultHeight,
 		replSession:             replSession,
@@ -84,7 +84,7 @@ func InitTUI(replSession *REPLSession) TUIModel {
 		configMenuModel:         configMenuModel,
 		llmConfigModel:          llmConfigModel,
 		issueTrackerConfigModel: issueTrackerConfigModel,
-		previousView:            ViewREPL,
+		previousView:            ViewIssueList,
 	}
 }
 

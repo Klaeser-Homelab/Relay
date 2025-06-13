@@ -232,18 +232,14 @@ func (m REPLModel) buildIssuesContext(input string, issues []Issue) string {
 
 	for _, issue := range issues {
 		var issueDesc string
-		displayStatus := issue.Status
-		if issue.Status == "done" {
-			displayStatus = "closed"
-		}
 
 		if len(issue.Labels) > 0 {
 			labelsStr := strings.Join(issue.Labels, ", ")
 			issueDesc = fmt.Sprintf("Issue #%d: %s [%s] (%s)\n",
-				issue.ID, issue.Content, labelsStr, displayStatus)
+				issue.Number, issue.Title, labelsStr, issue.State)
 		} else {
 			issueDesc = fmt.Sprintf("Issue #%d: %s (%s)\n",
-				issue.ID, issue.Content, displayStatus)
+				issue.Number, issue.Title, issue.State)
 		}
 		contextBuilder.WriteString(issueDesc)
 	}
@@ -255,20 +251,20 @@ func (m REPLModel) buildIssuesContext(input string, issues []Issue) string {
 func (m REPLModel) buildIssueContext(input string, issue Issue) string {
 	var contextBuilder strings.Builder
 	contextBuilder.WriteString("I'm working on this specific issue:\n\n")
-	contextBuilder.WriteString(fmt.Sprintf("Issue #%d: %s\n", issue.ID, issue.Content))
+	contextBuilder.WriteString(fmt.Sprintf("Issue #%d: %s\n", issue.Number, issue.Title))
+
+	if issue.Body != "" {
+		contextBuilder.WriteString(fmt.Sprintf("Description: %s\n", issue.Body))
+	}
 
 	if len(issue.Labels) > 0 {
 		labelsStr := strings.Join(issue.Labels, ", ")
 		contextBuilder.WriteString(fmt.Sprintf("Labels: %s\n", labelsStr))
 	}
 
-	displayStatus := issue.Status
-	if issue.Status == "done" {
-		displayStatus = "closed"
-	}
-
-	contextBuilder.WriteString(fmt.Sprintf("Status: %s\n", displayStatus))
-	contextBuilder.WriteString(fmt.Sprintf("Created: %s\n", formatRelativeTime(issue.Timestamp)))
+	contextBuilder.WriteString(fmt.Sprintf("State: %s\n", issue.State))
+	contextBuilder.WriteString(fmt.Sprintf("Created: %s\n", formatRelativeTime(issue.CreatedAt)))
+	contextBuilder.WriteString(fmt.Sprintf("URL: %s\n", issue.URL))
 	contextBuilder.WriteString(fmt.Sprintf("\nUser question about this issue: %s", input))
 
 	return contextBuilder.String()
@@ -282,9 +278,9 @@ func (m REPLModel) handleAddIssue(content string) (REPLModel, tea.Cmd) {
 		var issueMsg string
 		if len(issue.Labels) > 0 {
 			labelsStr := strings.Join(issue.Labels, ", ")
-			issueMsg = fmt.Sprintf("📋 Issue #%d captured: \"%s\" [%s]", issue.ID, issue.Content, labelsStr)
+			issueMsg = fmt.Sprintf("📋 Issue #%d created: \"%s\" [%s]", issue.Number, issue.Title, labelsStr)
 		} else {
-			issueMsg = fmt.Sprintf("📋 Issue #%d captured: \"%s\"", issue.ID, issue.Content)
+			issueMsg = fmt.Sprintf("📋 Issue #%d created: \"%s\"", issue.Number, issue.Title)
 		}
 		m.output = append(m.output, issueMsg)
 	}
@@ -421,7 +417,7 @@ func (m REPLModel) View() string {
 	// Title
 	title := titleStyle.Render(fmt.Sprintf("🚀 Relay REPL - Project: %s", m.replSession.currentProject.Name))
 	content.WriteString(title + "\n")
-	content.WriteString(fmt.Sprintf("📁 Working directory: %s\n\n", m.replSession.currentProject.Path))
+	content.WriteString(fmt.Sprintf("📁 Twerking directory: %s\n\n", m.replSession.currentProject.Path))
 
 	// Output history (scrollable)
 	maxLines := m.height - 6 // Reserve space for title, input, and help

@@ -110,8 +110,7 @@ func (m *InteractiveMenu) Display() {
 		fmt.Printf("%s\n", strings.Repeat("-", 9))
 		fmt.Printf("%-8s %s\n", "↑/↓", "Navigate")
 		fmt.Printf("%-8s %s\n", "Enter", "Select item")
-		fmt.Printf("%-8s %s\n", "c", "Close item")
-		fmt.Printf("%-8s %s\n", "d", "Delete item")
+		fmt.Printf("%-8s %s\n", "d", "Close item")
 		fmt.Printf("%-8s %s\n", "q", "Quit")
 	}
 }
@@ -169,9 +168,6 @@ func (m *InteractiveMenu) Run() (*MenuItem, string, error) {
 		case 'c', 'C': // Close
 			selected := &m.items[m.selectedIdx]
 			return selected, "close", nil
-		case 'd', 'D': // Delete (backward compatibility)
-			selected := &m.items[m.selectedIdx]
-			return selected, "delete", nil
 		case 'q', 'Q': // Quit
 			return nil, "quit", nil
 		}
@@ -216,19 +212,15 @@ func NewIssueActionMenu(issue *Issue) *IssueActionMenu {
 	return &IssueActionMenu{issue: issue}
 }
 
-// getStatusDisplay returns a clean text representation of status
-func getStatusDisplay(status string) string {
-	switch strings.ToLower(status) {
-	case "captured":
-		return ColorGreen + "[CAPTURED]" + ColorReset
-	case "in-progress":
-		return ColorYellow + "[IN-PROGRESS]" + ColorReset
-	case "done":
+// getStatusDisplay returns a clean text representation of GitHub issue state
+func getStatusDisplay(state string) string {
+	switch strings.ToLower(state) {
+	case "open":
+		return ColorGreen + "[OPEN]" + ColorReset
+	case "closed":
 		return ColorGray + "[CLOSED]" + ColorReset
-	case "archived":
-		return ColorCyan + "[ARCHIVED]" + ColorReset
 	default:
-		return ColorCyan + "[" + strings.ToUpper(status) + "]" + ColorReset
+		return ColorCyan + "[" + strings.ToUpper(state) + "]" + ColorReset
 	}
 }
 
@@ -259,29 +251,28 @@ func (m *IssueActionMenu) Display() {
 	fmt.Print(HideCursor)
 
 	// Header section
-	fmt.Printf("%sIssue #%d%s\n", ColorBold, m.issue.ID, ColorReset)
+	fmt.Printf("%sIssue #%d%s\n", ColorBold, m.issue.Number, ColorReset)
 	fmt.Printf("%s\n\n", strings.Repeat("=", 15))
 
 	// Issue details with fixed-width left column for labels
-	fmt.Printf("%-*s %s\n", LabelWidth, "Title:", m.issue.Content)
-	fmt.Printf("%-*s %s\n", LabelWidth, "Status:", getStatusDisplay(m.issue.Status))
+	fmt.Printf("%-*s %s\n", LabelWidth, "Title:", m.issue.Title)
+	fmt.Printf("%-*s %s\n", LabelWidth, "State:", getStatusDisplay(m.issue.State))
 
 	// Only show labels line if labels exist
 	if len(m.issue.Labels) > 0 {
 		fmt.Printf("%-*s %s\n", LabelWidth, "Labels:", getLabelsDisplay(m.issue.Labels))
 	}
 
-	fmt.Printf("%-*s %s\n", LabelWidth, "Created:", formatRelativeTime(m.issue.Timestamp))
+	fmt.Printf("%-*s %s\n", LabelWidth, "Created:", formatRelativeTime(m.issue.CreatedAt))
 
 	// Actions section with aligned columns
 	fmt.Printf("\n%sActions:%s\n", ColorBold, ColorReset)
 	fmt.Printf("%s\n", strings.Repeat("-", 8))
 
 	// Action menu items with consistent key/description alignment
-	fmt.Printf("%-*s %s\n", ActionWidth+1, "c", "Chat about this issue with Claude")
+	fmt.Printf("%-*s %s\n", ActionWidth+1, "d", "Chat about this issue with Claude")
 	fmt.Printf("%-*s %s\n", ActionWidth+1, "r", "Rename this issue")
 	fmt.Printf("%-*s %s\n", ActionWidth+1, "o", "Close this issue")
-	fmt.Printf("%-*s %s\n", ActionWidth+1, "d", "Delete this issue")
 	fmt.Printf("%-*s %s\n", ActionWidth+1, "p", "Push this issue to GitHub")
 	fmt.Printf("%-*s %s\n", ActionWidth+1, "q", "Back to issue list")
 }
@@ -309,14 +300,12 @@ func (m *IssueActionMenu) Run() (string, error) {
 		}
 
 		switch char {
-		case 'c', 'C':
+		case 'd', 'D':
 			return "chat", nil
 		case 'r', 'R':
 			return "rename", nil
 		case 'o', 'O':
 			return "close", nil
-		case 'd', 'D':
-			return "delete", nil
 		case 'p', 'P':
 			return "push", nil
 		case 'q', 'Q', 27: // q, Q, or ESC

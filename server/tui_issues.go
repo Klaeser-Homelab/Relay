@@ -21,7 +21,6 @@ type IssueListModel struct {
 	height        int
 	filterStatus  string
 	filterLabel   string
-	syncing       bool // Track if sync is in progress
 }
 
 func NewIssueListModel(issueManager *IssueManager, configManager *ConfigManager, projectName string, projectPath string) IssueListModel {
@@ -35,7 +34,6 @@ func NewIssueListModel(issueManager *IssueManager, configManager *ConfigManager,
 		selected:      0,
 		width:         80, // Default width
 		height:        24, // Default height
-		syncing:       false,
 	}
 }
 
@@ -45,18 +43,6 @@ func (m IssueListModel) Init() tea.Cmd {
 
 func (m IssueListModel) Update(msg tea.Msg) (IssueListModel, tea.Cmd) {
 	switch msg := msg.(type) {
-	case SyncResultMsg:
-		// Handle sync result
-		m.syncing = false
-		if msg.Success {
-			// Refresh issue list after successful sync
-			m.issues = m.issueManager.ListIssues(m.filterStatus, m.filterLabel)
-			if m.selected >= len(m.issues) && len(m.issues) > 0 {
-				m.selected = len(m.issues) - 1
-			}
-		}
-		// TODO: Show sync status/errors to user
-		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc":
@@ -81,23 +67,14 @@ func (m IssueListModel) Update(msg tea.Msg) (IssueListModel, tea.Cmd) {
 			}
 
 		case "c":
-			// Chat with all issues in context
-			context := &REPLContext{
-				Type:        "issues",
-				Data:        m.issues,
-				DisplayName: "Issues",
-			}
-			return m, SwitchToView(ViewREPL, context)
-
-		case "o":
 			// Close issue with reason selection
 			if len(m.issues) > 0 {
 				selectedIssue := m.issues[m.selected]
 				closeData := CloseReasonData{
-					IssueID:    selectedIssue.ID,
-					IssueTitle: selectedIssue.Content,
+					IssueID:    selectedIssue.Number,
+					IssueTitle: selectedIssue.Title,
 					OnConfirm: func(reason string) tea.Cmd {
-						err := m.issueManager.CloseIssue(selectedIssue.ID, reason)
+						err := m.issueManager.CloseIssue(selectedIssue.Number, reason)
 						if err != nil {
 							// Handle error - could show error message
 							return BackToPreviousView()
@@ -109,34 +86,16 @@ func (m IssueListModel) Update(msg tea.Msg) (IssueListModel, tea.Cmd) {
 				return m, SwitchToView(ViewCloseReason, closeData)
 			}
 
-		case "d":
-			// Delete issue with confirmation (backward compatibility)
-			if len(m.issues) > 0 {
-				selectedIssue := m.issues[m.selected]
-				confirmData := ConfirmationData{
-					Message: fmt.Sprintf("Delete issue #%d: \"%s\"?", selectedIssue.ID, selectedIssue.Content),
-					OnConfirm: func(confirmed bool) tea.Cmd {
-						if confirmed {
-							err := m.issueManager.DeleteIssue(selectedIssue.ID)
-							if err != nil {
-								// Handle error
-								return nil
-							}
-							// Refresh issue list
-							m.issues = m.issueManager.ListIssues(m.filterStatus, m.filterLabel)
-							if m.selected >= len(m.issues) && len(m.issues) > 0 {
-								m.selected = len(m.issues) - 1
-							}
-						}
-						return BackToPreviousView()
-					},
-				}
-				return m, SwitchToView(ViewConfirmation, confirmData)
+		case "o":
+			// Chat with all issues in context
+			context := &REPLContext{
+				Type:        "issues",
+				Data:        m.issues,
+				DisplayName: "Issues",
 			}
+			return m, SwitchToView(ViewREPL, context)
 
-		case "s":
-			// Sync with GitHub
-			return m.handleSync()
+
 
 		case "n":
 			// New issue
@@ -160,9 +119,9 @@ func (m IssueListModel) Update(msg tea.Msg) (IssueListModel, tea.Cmd) {
 			// Check for number keys (0-9) to select issues directly
 			if len(msg.String()) == 1 && msg.String() >= "0" && msg.String() <= "9" {
 				issueNum := int(msg.String()[0] - '0')
-				// Find issue with matching ID
+				// Find issue with matching GitHub number
 				for i, issue := range m.issues {
-					if issue.ID == issueNum {
+					if issue.Number == issueNum {
 						// Select this issue and open detail view
 						m.selected = i
 						return m, SwitchToView(ViewIssueDetail, issue)
@@ -175,21 +134,6 @@ func (m IssueListModel) Update(msg tea.Msg) (IssueListModel, tea.Cmd) {
 	return m, nil
 }
 
-// handleSync performs GitHub synchronization
-func (m IssueListModel) handleSync() (IssueListModel, tea.Cmd) {
-	if m.syncing {
-		// Already syncing, ignore
-		return m, nil
-	}
-
-	// Mark as syncing
-	m.syncing = true
-
-	// Return a command that performs the sync operation
-	return m, func() tea.Msg {
-		return performSync(m.issueManager, m.configManager, m.projectPath)
-	}
-}
 
 func (m IssueListModel) View() string {
 	var content strings.Builder
@@ -231,20 +175,15 @@ func (m IssueListModel) View() string {
 
 		for i := startIdx; i < endIdx; i++ {
 			issue := m.issues[i]
-			relativeTime := formatRelativeTime(issue.Timestamp)
-			isClosed := issue.Status == "done"
+			relativeTime := formatRelativeTime(issue.CreatedAt)
+			isClosed := issue.State == "closed"
 
 			// Format labels with colors (only if labels exist)
 			var line string
 			if len(issue.Labels) == 0 {
-				// No labels - don't show label section
-				if isClosed {
-					line = fmt.Sprintf("#%-2d %s (closed) - %s",
-						issue.ID, issue.Content, relativeTime)
-				} else {
-					line = fmt.Sprintf("#%-2d %s (%s) - %s",
-						issue.ID, issue.Content, issue.Status, relativeTime)
-				}
+				// No labels - don't show label section or status
+				line = fmt.Sprintf("#%-2d %s - %s",
+					issue.Number, issue.Title, relativeTime)
 			} else {
 				var labelParts []string
 				for _, label := range issue.Labels {
@@ -263,13 +202,8 @@ func (m IssueListModel) View() string {
 					}
 				}
 				styledLabels := strings.Join(labelParts, ", ")
-				if isClosed {
-					line = fmt.Sprintf("#%-2d %s [%s] (closed) - %s",
-						issue.ID, issue.Content, styledLabels, relativeTime)
-				} else {
-					line = fmt.Sprintf("#%-2d %s [%s] (%s) - %s",
-						issue.ID, issue.Content, styledLabels, issue.Status, relativeTime)
-				}
+				line = fmt.Sprintf("#%-2d %s [%s] - %s",
+					issue.Number, issue.Title, styledLabels, relativeTime)
 			}
 
 			if i == m.selected {
@@ -302,44 +236,17 @@ func (m IssueListModel) View() string {
 	content.WriteString("\n")
 
 	// Define color styles for different action types
-	grayStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Faint(true)
 	deleteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)  // Red for delete
 	createStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // Yellow for new/create
-	syncStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)   // Magenta for sync
 	backStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Bold(true)    // Gray for back
 
 	// Action options displayed horizontally
 	chatStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true) // Blue for chat
 
-	// Get sync status for display in parentheses with colored circles
-	var syncStatusText string
-	var statusCircle string
-	if m.syncing {
-		syncStatusText = "syncing..."
-		statusCircle = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("●") // Yellow circle
-	} else {
-		switch m.issueManager.GetSyncStatus() {
-		case "Synced":
-			syncStatusText = "synced"
-			statusCircle = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("●") // Green circle
-		case "Sync Error":
-			syncStatusText = "error"
-			statusCircle = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("●") // Red circle
-		default:
-			syncStatusText = "not synced"
-			statusCircle = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("●") // Gray circle
-		}
-	}
-
-	// Build action options with sync status in parentheses including colored circle
-	syncAction := syncStyle.Render("s") + " Sync (" + statusCircle + " " + grayStyle.Render(syncStatusText) + ")"
-
 	actionOptions := []string{
-		chatStyle.Render("c") + " Chat",
-		chatStyle.Render("o") + " Close",
-		deleteStyle.Render("d") + " Delete",
+		chatStyle.Render("o") + " Chat",
+		deleteStyle.Render("c") + " Close",
 		createStyle.Render("n") + " New",
-		syncAction,
 		backStyle.Render("q") + " Back",
 	}
 
@@ -366,9 +273,9 @@ type IssueDetailModel struct {
 func NewIssueDetailModel(issue Issue, replSession *REPLSession) IssueDetailModel {
 	fields := []string{
 		"Title",
-		"Status",
+		"Body",
+		"State",
 		"Labels",
-		"Prompt",
 	}
 
 	return IssueDetailModel{
@@ -405,13 +312,8 @@ func (m IssueDetailModel) Update(msg tea.Msg) (IssueDetailModel, tea.Cmd) {
 			return m.editSelectedField()
 
 		case "c":
-			// Chat with single issue in context
-			context := &REPLContext{
-				Type:        "issue",
-				Data:        m.issue,
-				DisplayName: fmt.Sprintf("Issue %d: %s", m.issue.ID, m.issue.Content),
-			}
-			return m, SwitchToView(ViewREPL, context)
+			// Close issue shortcut
+			return m.handleClose()
 
 		case "s":
 			// Start with Claude Code shortcut
@@ -422,8 +324,13 @@ func (m IssueDetailModel) Update(msg tea.Msg) (IssueDetailModel, tea.Cmd) {
 			return m.handleClose()
 
 		case "d":
-			// Delete shortcut
-			return m.handleDelete()
+			// Chat with single issue in context
+			context := &REPLContext{
+				Type:        "issue",
+				Data:        m.issue,
+				DisplayName: fmt.Sprintf("Issue %d: %s", m.issue.Number, m.issue.Title),
+			}
+			return m, SwitchToView(ViewREPL, context)
 		}
 	}
 
@@ -434,12 +341,12 @@ func (m IssueDetailModel) editSelectedField() (IssueDetailModel, tea.Cmd) {
 	switch m.selected {
 	case 0: // Title
 		return m.handleRename()
-	case 1: // Status
+	case 1: // Body
+		return m.handleEditBody()
+	case 2: // State
 		return m.handleEditStatus()
-	case 2: // Labels
+	case 3: // Labels
 		return m.handleEditLabels()
-	case 3: // Prompt
-		return m.handleEditPrompt()
 	}
 	return m, nil
 }
@@ -483,26 +390,21 @@ func generateBranchName(issueID int, issueContent string) string {
 func (m IssueDetailModel) openClaudeCodeTerminal() tea.Cmd {
 	return func() tea.Msg {
 		// Generate worktree and branch names
-		worktreeName := generateWorktreeName(m.replSession.currentProject.Name, m.issue.ID, m.issue.Content)
-		branchName := generateBranchName(m.issue.ID, m.issue.Content)
+		worktreeName := generateWorktreeName(m.replSession.currentProject.Name, m.issue.Number, m.issue.Title)
+		branchName := generateBranchName(m.issue.Number, m.issue.Title)
 
 		// Build the prompt for Claude Code
 		var promptBuilder strings.Builder
 
 		// Add issue information
-		displayStatus := m.issue.Status
-		if m.issue.Status == "done" {
-			displayStatus = "closed"
-		}
-
-		promptBuilder.WriteString(fmt.Sprintf("Issue #%d: %s\n", m.issue.ID, m.issue.Content))
+		promptBuilder.WriteString(fmt.Sprintf("Issue #%d: %s\n", m.issue.Number, m.issue.Title))
 		promptBuilder.WriteString(fmt.Sprintf("Labels: %s\n", strings.Join(m.issue.Labels, ", ")))
-		promptBuilder.WriteString(fmt.Sprintf("Status: %s\n", displayStatus))
-		promptBuilder.WriteString(fmt.Sprintf("Created: %s\n", formatRelativeTime(m.issue.Timestamp)))
+		promptBuilder.WriteString(fmt.Sprintf("Status: %s\n", m.issue.State))
+		promptBuilder.WriteString(fmt.Sprintf("Created: %s\n", formatRelativeTime(m.issue.CreatedAt)))
 
-		// Add custom prompt if exists
-		if m.issue.Prompt != "" {
-			promptBuilder.WriteString(fmt.Sprintf("\nCustom Prompt:\n%s\n", m.issue.Prompt))
+		// Add issue body if exists
+		if m.issue.Body != "" {
+			promptBuilder.WriteString(fmt.Sprintf("\nDescription:\n%s\n", m.issue.Body))
 		} else {
 			promptBuilder.WriteString("\nPlease help me work on this issue.")
 		}
@@ -577,33 +479,16 @@ func (m IssueDetailModel) openClaudeCodeTerminal() tea.Cmd {
 	}
 }
 
-// triggerSyncAfterUpdate creates a command to sync the issue after a field update
-func (m IssueDetailModel) triggerSyncAfterUpdate() tea.Cmd {
-	return func() tea.Msg {
-		// Mark the specific issue as needing sync
-		err := m.replSession.issueManager.UpdateIssueSyncStatus(m.issue.ID, "Syncing")
-		if err != nil {
-			return nil // Ignore sync errors for now
-		}
 
-		// Trigger sync in background
-		return performSync(m.replSession.issueManager, m.replSession.configManager, m.replSession.currentProject.Path)
-	}
-}
-
-func (m IssueDetailModel) handleEditPrompt() (IssueDetailModel, tea.Cmd) {
+func (m IssueDetailModel) handleEditBody() (IssueDetailModel, tea.Cmd) {
 	inputData := TextInputData{
-		Prompt:      fmt.Sprintf("Edit prompt for issue #%d", m.issue.ID),
-		Placeholder: m.issue.Prompt,
-		OnComplete: func(prompt string) tea.Cmd {
-			if prompt != m.issue.Prompt {
-				err := m.replSession.issueManager.UpdateIssuePrompt(m.issue.ID, prompt)
+		Prompt:      fmt.Sprintf("Edit body for issue #%d", m.issue.Number),
+		Placeholder: m.issue.Body,
+		OnComplete: func(body string) tea.Cmd {
+			if body != m.issue.Body {
+				err := m.replSession.issueManager.UpdateIssueBody(m.issue.Number, body)
 				if err == nil {
-					m.issue.Prompt = prompt
-					// Trigger sync after successful update
-					go func() {
-						performSync(m.replSession.issueManager, m.replSession.configManager, m.replSession.currentProject.Path)
-					}()
+					m.issue.Body = body
 				}
 			}
 			return BackToPreviousView()
@@ -614,18 +499,13 @@ func (m IssueDetailModel) handleEditPrompt() (IssueDetailModel, tea.Cmd) {
 
 func (m IssueDetailModel) handleRename() (IssueDetailModel, tea.Cmd) {
 	inputData := TextInputData{
-		Prompt:      fmt.Sprintf("Rename issue #%d", m.issue.ID),
-		Placeholder: m.issue.Content,
-		OnComplete: func(newContent string) tea.Cmd {
-			if newContent != "" {
-				err := m.replSession.issueManager.UpdateIssueContent(m.issue.ID, newContent)
+		Prompt:      fmt.Sprintf("Rename issue #%d", m.issue.Number),
+		Placeholder: m.issue.Title,
+		OnComplete: func(newTitle string) tea.Cmd {
+			if newTitle != "" {
+				err := m.replSession.issueManager.UpdateIssueTitle(m.issue.Number, newTitle)
 				if err == nil {
-					m.issue.Content = newContent
-					m.issue.Labels = categorizeIssue(newContent)
-					// Trigger sync after successful update
-					go func() {
-						performSync(m.replSession.issueManager, m.replSession.configManager, m.replSession.currentProject.Path)
-					}()
+					m.issue.Title = newTitle
 				}
 			}
 			return BackToPreviousView()
@@ -636,18 +516,17 @@ func (m IssueDetailModel) handleRename() (IssueDetailModel, tea.Cmd) {
 
 func (m IssueDetailModel) handleEditStatus() (IssueDetailModel, tea.Cmd) {
 	inputData := TextInputData{
-		Prompt:      fmt.Sprintf("Edit status for issue #%d", m.issue.ID),
-		Placeholder: m.issue.Status,
-		OnComplete: func(newStatus string) tea.Cmd {
-			if newStatus != "" && newStatus != m.issue.Status {
-				err := m.replSession.issueManager.UpdateIssueStatus(m.issue.ID, newStatus)
+		Prompt:      fmt.Sprintf("Edit state for issue #%d (open/closed)", m.issue.Number),
+		Placeholder: m.issue.State,
+		OnComplete: func(newState string) tea.Cmd {
+			if newState != "" && newState != m.issue.State && (newState == "open" || newState == "closed") {
+				err := m.replSession.issueManager.UpdateIssueStatus(m.issue.Number, newState)
 				if err == nil {
-					m.issue.Status = newStatus
-					// Trigger sync after successful update
-					go func() {
-						performSync(m.replSession.issueManager, m.replSession.configManager, m.replSession.currentProject.Path)
-					}()
+					m.issue.State = newState
 				}
+			} else if newState != "open" && newState != "closed" && newState != "" {
+				// Show error for invalid state
+				fmt.Printf("💡 GitHub issues only support 'open' and 'closed' states.\n")
 			}
 			return BackToPreviousView()
 		},
@@ -657,17 +536,13 @@ func (m IssueDetailModel) handleEditStatus() (IssueDetailModel, tea.Cmd) {
 
 func (m IssueDetailModel) handleEditLabels() (IssueDetailModel, tea.Cmd) {
 	labelData := LabelEditorData{
-		IssueID:       m.issue.ID,
+		IssueID:       m.issue.Number,
 		CurrentLabels: append([]string(nil), m.issue.Labels...), // Copy slice
 		OnComplete: func(newLabels []string) tea.Cmd {
 			// Update the issue labels
-			err := m.replSession.issueManager.UpdateIssueLabels(m.issue.ID, newLabels)
+			err := m.replSession.issueManager.UpdateIssueLabels(m.issue.Number, newLabels)
 			if err == nil {
 				m.issue.Labels = newLabels
-				// Trigger sync after successful update
-				go func() {
-					performSync(m.replSession.issueManager, m.replSession.configManager, m.replSession.currentProject.Path)
-				}()
 			}
 			return BackToPreviousView()
 		},
@@ -677,10 +552,10 @@ func (m IssueDetailModel) handleEditLabels() (IssueDetailModel, tea.Cmd) {
 
 func (m IssueDetailModel) handleDelete() (IssueDetailModel, tea.Cmd) {
 	confirmData := ConfirmationData{
-		Message: fmt.Sprintf("Delete issue #%d: \"%s\"?", m.issue.ID, m.issue.Content),
+		Message: fmt.Sprintf("Delete issue #%d: \"%s\"? (This will close the issue on GitHub)", m.issue.Number, m.issue.Title),
 		OnConfirm: func(confirmed bool) tea.Cmd {
 			if confirmed {
-				err := m.replSession.issueManager.DeleteIssue(m.issue.ID)
+				err := m.replSession.issueManager.DeleteIssue(m.issue.Number)
 				if err == nil {
 					return SwitchToView(ViewIssueList, nil)
 				}
@@ -693,10 +568,10 @@ func (m IssueDetailModel) handleDelete() (IssueDetailModel, tea.Cmd) {
 
 func (m IssueDetailModel) handleClose() (IssueDetailModel, tea.Cmd) {
 	closeData := CloseReasonData{
-		IssueID:    m.issue.ID,
-		IssueTitle: m.issue.Content,
+		IssueID:    m.issue.Number,
+		IssueTitle: m.issue.Title,
 		OnConfirm: func(reason string) tea.Cmd {
-			err := m.replSession.issueManager.CloseIssue(m.issue.ID, reason)
+			err := m.replSession.issueManager.CloseIssue(m.issue.Number, reason)
 			if err != nil {
 				// Handle error - could show error message
 				return BackToPreviousView()
@@ -712,7 +587,7 @@ func (m IssueDetailModel) View() string {
 	var content strings.Builder
 
 	// Header
-	title := titleStyle.Render(fmt.Sprintf("Issue #%d", m.issue.ID))
+	title := titleStyle.Render(fmt.Sprintf("Issue #%d", m.issue.Number))
 	content.WriteString(title + "\n")
 	content.WriteString(strings.Repeat("=", 15) + "\n\n")
 
@@ -724,25 +599,24 @@ func (m IssueDetailModel) View() string {
 		labelsStr = "<press Enter to add labels>"
 	}
 
-	// Editable fields with selection highlighting
-	displayStatus := m.issue.Status
-	if m.issue.Status == "done" {
-		displayStatus = "closed"
-	}
-
 	fields := []struct {
 		label string
 		value string
 	}{
-		{"Title", m.issue.Content},
-		{"Status", displayStatus},
-		{"Labels", labelsStr},
-		{"Prompt", func() string {
-			if m.issue.Prompt != "" {
-				return m.issue.Prompt
+		{"Title", m.issue.Title},
+		{"Body", func() string {
+			if m.issue.Body != "" {
+				return m.issue.Body
 			}
 			return "<empty - press Enter to set>"
 		}()},
+		{"State", func() string {
+			if m.issue.State == "closed" && m.issue.ClosedAt != nil {
+				return fmt.Sprintf("%s (%s)", m.issue.State, formatRelativeTime(*m.issue.ClosedAt))
+			}
+			return m.issue.State
+		}()},
+		{"Labels", labelsStr},
 	}
 
 	for i, field := range fields {
@@ -758,7 +632,8 @@ func (m IssueDetailModel) View() string {
 
 	// Created timestamp in gray below selection area
 	grayStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Faint(true)
-	content.WriteString(grayStyle.Render(fmt.Sprintf("Created: %s", formatRelativeTime(m.issue.Timestamp))) + "\n\n")
+	content.WriteString(grayStyle.Render(fmt.Sprintf("Created: %s", formatRelativeTime(m.issue.CreatedAt))) + "\n")
+	content.WriteString(grayStyle.Render(fmt.Sprintf("URL: %s", m.issue.URL)) + "\n\n")
 
 	// Define color styles for different action types
 	chatStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)  // Blue for chat
@@ -768,10 +643,9 @@ func (m IssueDetailModel) View() string {
 
 	// Actions displayed on single horizontal line with colored letters
 	actionData := []string{
-		chatStyle.Render("c") + " Chat",
+		chatStyle.Render("d") + " Chat",
 		openStyle.Render("s") + " Start",
-		chatStyle.Render("o") + " Close",
-		deleteStyle.Render("d") + " Delete",
+		deleteStyle.Render("c") + " Close",
 		backStyle.Render("q") + " Back",
 	}
 
@@ -782,38 +656,3 @@ func (m IssueDetailModel) View() string {
 	return content.String()
 }
 
-// SyncResultMsg represents the result of a sync operation
-type SyncResultMsg struct {
-	Success bool
-	Result  *SyncResult
-	Error   error
-}
-
-// performSync executes the GitHub synchronization
-func performSync(issueManager *IssueManager, configManager *ConfigManager, projectPath string) SyncResultMsg {
-	// Create GitHub service and sync manager
-	githubService := NewGitHubService(configManager, projectPath)
-	syncManager := NewGitHubSyncManager(issueManager, githubService, configManager)
-
-	// Auto-detect and configure GitHub repository if not set
-	githubConfig := configManager.GetGitHubConfig()
-	if githubConfig.Repository == "" {
-		repo, err := githubService.DetectRepository()
-		if err != nil {
-			return SyncResultMsg{Success: false, Error: fmt.Errorf("failed to detect repository: %w", err)}
-		}
-
-		err = configManager.UpdateGitHubRepository(repo)
-		if err != nil {
-			return SyncResultMsg{Success: false, Error: fmt.Errorf("failed to update repository config: %w", err)}
-		}
-	}
-
-	// Perform bidirectional sync
-	result, err := syncManager.SyncBidirectional()
-	if err != nil {
-		return SyncResultMsg{Success: false, Error: err}
-	}
-
-	return SyncResultMsg{Success: true, Result: result}
-}
