@@ -138,7 +138,7 @@ func (g *GitOperations) Status() (string, error) {
 func (g *GitOperations) CreateBranch(branchName string) error {
 	g.logger.Printf("Creating branch: %s", branchName)
 
-	command := fmt.Sprintf("Create a new git branch called '%s' and switch to it.", branchName)
+	command := fmt.Sprintf("Create a new git branch called '%s' from the latest main branch. First fetch and checkout main, then pull the latest changes, then create and switch to the new branch '%s'.", branchName, branchName)
 
 	response, err := g.llmProvider.SendMessage(context.Background(), command)
 	if err != nil {

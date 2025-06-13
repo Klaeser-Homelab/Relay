@@ -518,7 +518,7 @@ func (m IssueDetailModel) openClaudeCodeTerminal() tea.Cmd {
 		promptBuilder.WriteString(fmt.Sprintf("\nWhen you're done:\n"))
 		promptBuilder.WriteString(fmt.Sprintf("1. Push: git push -u origin %s\n", branchName))
 		promptBuilder.WriteString(fmt.Sprintf("2. Return to main: cd %s\n", m.replSession.currentProject.Path))
-		promptBuilder.WriteString(fmt.Sprintf("3. Merge: git checkout main && git merge %s && git push\n", branchName))
+		promptBuilder.WriteString(fmt.Sprintf("3. Merge: git checkout main && git pull origin main && git merge %s && git push\n", branchName))
 		promptBuilder.WriteString(fmt.Sprintf("4. Cleanup: git worktree remove %s && git branch -d %s\n", worktreeName, branchName))
 
 		prompt := promptBuilder.String()
@@ -538,8 +538,8 @@ func (m IssueDetailModel) openClaudeCodeTerminal() tea.Cmd {
 			worktreeSetupCmd = fmt.Sprintf("cd \"%s\" && %s",
 				worktreeAbsPath, claudeCmd)
 		} else {
-			// Create worktree and branch, then start Claude
-			worktreeSetupCmd = fmt.Sprintf("cd \"%s\" && git worktree add %s -b %s && cd %s && %s",
+			// Create worktree and branch from latest main, then start Claude
+			worktreeSetupCmd = fmt.Sprintf("cd \"%s\" && git fetch origin main && git checkout main && git pull origin main && git worktree add %s -b %s && cd %s && %s",
 				m.replSession.currentProject.Path, worktreeName, branchName, worktreeName, claudeCmd)
 		}
 
