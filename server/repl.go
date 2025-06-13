@@ -77,6 +77,9 @@ func NewREPLSession(projectName string) (*REPLSession, error) {
 		return nil, fmt.Errorf("failed to initialize issue manager: %w", err)
 	}
 
+	// Set GitOperations for the IssueManager
+	issueManager.SetGitOperations(gitOps)
+
 	return &REPLSession{
 		currentProject: project,
 		projectManager: pm,

@@ -97,6 +97,15 @@ func (m IssueListModel) Update(msg tea.Msg) (IssueListModel, tea.Cmd) {
 
 
 
+		case "f":
+			// Finish in-progress issue
+			if len(m.issues) > 0 {
+				selectedIssue := m.issues[m.selected]
+				if selectedIssue.State != "closed" && isIssueInProgress(m.projectName, selectedIssue.Number) {
+					return m, m.finishIssue(selectedIssue)
+				}
+			}
+
 		case "n":
 			// New issue
 			inputData := TextInputData{
@@ -177,13 +186,21 @@ func (m IssueListModel) View() string {
 			issue := m.issues[i]
 			relativeTime := formatRelativeTime(issue.CreatedAt)
 			isClosed := issue.State == "closed"
+			inProgress := !isClosed && isIssueInProgress(m.projectName, issue.Number)
+
+			// Add "in progress" indicator to time if applicable
+			timeWithStatus := relativeTime
+			if inProgress {
+				blueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+				timeWithStatus = relativeTime + " " + blueStyle.Render("(in progress)")
+			}
 
 			// Format labels with colors (only if labels exist)
 			var line string
 			if len(issue.Labels) == 0 {
 				// No labels - don't show label section or status
 				line = fmt.Sprintf("#%-2d %s - %s",
-					issue.Number, issue.Title, relativeTime)
+					issue.Number, issue.Title, timeWithStatus)
 			} else {
 				var labelParts []string
 				for _, label := range issue.Labels {
@@ -203,7 +220,7 @@ func (m IssueListModel) View() string {
 				}
 				styledLabels := strings.Join(labelParts, ", ")
 				line = fmt.Sprintf("#%-2d %s [%s] - %s",
-					issue.Number, issue.Title, styledLabels, relativeTime)
+					issue.Number, issue.Title, styledLabels, timeWithStatus)
 			}
 
 			if i == m.selected {
@@ -242,12 +259,28 @@ func (m IssueListModel) View() string {
 
 	// Action options displayed horizontally
 	chatStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true) // Blue for chat
+	finishStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true) // Green for finish
 
 	actionOptions := []string{
 		chatStyle.Render("o") + " Chat",
 		deleteStyle.Render("c") + " Close",
 		createStyle.Render("n") + " New",
 		backStyle.Render("q") + " Back",
+	}
+
+	// Add finish option if selected issue is in progress
+	if len(m.issues) > 0 && m.selected < len(m.issues) {
+		selectedIssue := m.issues[m.selected]
+		if selectedIssue.State != "closed" && isIssueInProgress(m.projectName, selectedIssue.Number) {
+			// Insert finish option before "New"
+			actionOptions = []string{
+				chatStyle.Render("o") + " Chat",
+				deleteStyle.Render("c") + " Close",
+				finishStyle.Render("f") + " Finish",
+				createStyle.Render("n") + " New",
+				backStyle.Render("q") + " Back",
+			}
+		}
 	}
 
 	// Join actions with bullet separators
@@ -258,6 +291,63 @@ func (m IssueListModel) View() string {
 	content.WriteString(helpStyle.Render("Controls: Use keys above to interact, or press issue number to select") + "\n")
 
 	return content.String()
+}
+
+// finishIssue handles finishing an in-progress issue
+func (m IssueListModel) finishIssue(issue Issue) tea.Cmd {
+	return func() tea.Msg {
+		// Get the worktree path
+		worktreeName := generateWorktreeName(m.projectName, issue.Number)
+		branchName := generateBranchName(issue.Number)
+		worktreeAbsPath := fmt.Sprintf("%s/%s", m.projectPath, worktreeName)
+		
+		// Stage all changes
+		cmd := exec.Command("git", "add", ".")
+		cmd.Dir = worktreeAbsPath
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Failed to stage changes: %v\n", err)
+			return BackToPreviousView()
+		}
+		
+		// Check if there are changes to commit
+		cmd = exec.Command("git", "diff", "--cached", "--quiet")
+		cmd.Dir = worktreeAbsPath
+		if cmd.Run() == nil {
+			fmt.Printf("No changes to commit\n")
+			return BackToPreviousView()
+		}
+		
+		// Commit changes
+		commitMsg := fmt.Sprintf("feat: resolve issue #%d - %s", issue.Number, issue.Title)
+		cmd = exec.Command("git", "commit", "-m", commitMsg)
+		cmd.Dir = worktreeAbsPath
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Failed to commit changes: %v\n", err)
+			return BackToPreviousView()
+		}
+		
+		// Push branch
+		cmd = exec.Command("git", "push", "-u", "origin", branchName)
+		cmd.Dir = worktreeAbsPath
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Failed to push branch: %v\n", err)
+			return BackToPreviousView()
+		}
+		
+		// Create pull request using gh CLI
+		prTitle := fmt.Sprintf("feat: resolve issue #%d - %s", issue.Number, issue.Title)
+		prBody := fmt.Sprintf("Closes #%d\n\n%s", issue.Number, issue.Body)
+		cmd = exec.Command("gh", "pr", "create", "--title", prTitle, "--body", prBody)
+		cmd.Dir = worktreeAbsPath
+		output, err := cmd.Output()
+		if err != nil {
+			fmt.Printf("Failed to create PR: %v\n", err)
+			return BackToPreviousView()
+		}
+		
+		fmt.Printf("✅ Issue #%d finished successfully!\nPR created: %s\n", issue.Number, string(output))
+		return BackToPreviousView()
+	}
 }
 
 // Issue Detail View
@@ -323,6 +413,12 @@ func (m IssueDetailModel) Update(msg tea.Msg) (IssueDetailModel, tea.Cmd) {
 			// Close issue shortcut
 			return m.handleClose()
 
+		case "f":
+			// Finish in-progress issue
+			if m.issue.State != "closed" && isIssueInProgress(m.replSession.currentProject.Name, m.issue.Number) {
+				return m, m.finishIssueDetail()
+			}
+
 		case "d":
 			// Chat with single issue in context
 			context := &REPLContext{
@@ -356,42 +452,47 @@ func (m IssueDetailModel) handleOpenInClaudeCode() (IssueDetailModel, tea.Cmd) {
 }
 
 // generateWorktreeName creates a descriptive worktree directory name
-func generateWorktreeName(projectName string, issueID int, issueContent string) string {
-	// Create brief description from issue content (max 30 chars, no spaces)
-	briefDesc := strings.ReplaceAll(strings.ToLower(issueContent), " ", "-")
-	if len(briefDesc) > 30 {
-		briefDesc = briefDesc[:30]
-	}
-	// Remove special characters
-	briefDesc = strings.ReplaceAll(briefDesc, "'", "")
-	briefDesc = strings.ReplaceAll(briefDesc, "\"", "")
-	briefDesc = strings.ReplaceAll(briefDesc, "/", "-")
-	briefDesc = strings.ReplaceAll(briefDesc, "\\", "-")
-
-	return fmt.Sprintf("../%s-issue-%d-%s", projectName, issueID, briefDesc)
+func generateWorktreeName(projectName string, issueID int) string {
+	return fmt.Sprintf("../%s-issue-%d", projectName, issueID)
 }
 
 // generateBranchName creates a feature branch name
-func generateBranchName(issueID int, issueContent string) string {
-	// Create brief description from issue content (max 30 chars, no spaces)
-	briefDesc := strings.ReplaceAll(strings.ToLower(issueContent), " ", "-")
-	if len(briefDesc) > 30 {
-		briefDesc = briefDesc[:30]
-	}
-	// Remove special characters
-	briefDesc = strings.ReplaceAll(briefDesc, "'", "")
-	briefDesc = strings.ReplaceAll(briefDesc, "\"", "")
-	briefDesc = strings.ReplaceAll(briefDesc, "/", "-")
-	briefDesc = strings.ReplaceAll(briefDesc, "\\", "-")
+func generateBranchName(issueID int) string {
+	return fmt.Sprintf("feature/issue-%d", issueID)
+}
 
-	return fmt.Sprintf("feature/issue-%d-%s", issueID, briefDesc)
+// checkFeatureBranchExists checks if a feature branch exists for the given issue
+func checkFeatureBranchExists(issueID int) bool {
+	branchName := generateBranchName(issueID)
+	cmd := exec.Command("git", "branch", "--list", branchName)
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(output)) != ""
+}
+
+// checkWorktreeExists checks if a worktree exists for the given issue
+func checkWorktreeExists(projectName string, issueID int) bool {
+	worktreeSuffix := fmt.Sprintf("%s-issue-%d", projectName, issueID)
+	cmd := exec.Command("git", "worktree", "list")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(output), worktreeSuffix)
+}
+
+// isIssueInProgress checks if an issue has both a feature branch and worktree
+func isIssueInProgress(projectName string, issueID int) bool {
+	return checkFeatureBranchExists(issueID) && checkWorktreeExists(projectName, issueID)
 }
 
 func (m IssueDetailModel) openClaudeCodeTerminal() tea.Cmd {
 	return func() tea.Msg {
 		// Generate worktree and branch names
-		worktreeName := generateWorktreeName(m.replSession.currentProject.Name, m.issue.Number, m.issue.Title)
-		branchName := generateBranchName(m.issue.Number, m.issue.Title)
+		worktreeName := generateWorktreeName(m.replSession.currentProject.Name, m.issue.Number)
+		branchName := generateBranchName(m.issue.Number)
 
 		// Build the prompt for Claude Code
 		var promptBuilder strings.Builder
@@ -405,12 +506,13 @@ func (m IssueDetailModel) openClaudeCodeTerminal() tea.Cmd {
 		// Add issue body if exists
 		if m.issue.Body != "" {
 			promptBuilder.WriteString(fmt.Sprintf("\nDescription:\n%s\n", m.issue.Body))
-		} else {
-			promptBuilder.WriteString("\nPlease help me work on this issue.")
 		}
 
+		// Add planning instruction
+		promptBuilder.WriteString(fmt.Sprintf("\nRead the title and body and create a plan for executing it.\n"))
+
 		// Add worktree information to the prompt
-		promptBuilder.WriteString(fmt.Sprintf("\n\nWorktree Setup:\n"))
+		promptBuilder.WriteString(fmt.Sprintf("\nWorktree Setup:\n"))
 		promptBuilder.WriteString(fmt.Sprintf("- Working in isolated worktree: %s\n", worktreeName))
 		promptBuilder.WriteString(fmt.Sprintf("- Feature branch: %s\n", branchName))
 		promptBuilder.WriteString(fmt.Sprintf("\nWhen you're done:\n"))
@@ -424,9 +526,22 @@ func (m IssueDetailModel) openClaudeCodeTerminal() tea.Cmd {
 		// Build claude command - escape quotes properly
 		claudeCmd := fmt.Sprintf("claude \"%s\"", strings.ReplaceAll(prompt, "\"", "\\\""))
 
-		// Create the worktree setup commands
-		worktreeSetupCmd := fmt.Sprintf("cd \"%s\" && git worktree add %s -b %s && cd %s && %s",
-			m.replSession.currentProject.Path, worktreeName, branchName, worktreeName, claudeCmd)
+		// Check if worktree and branch already exist
+		branchExists := checkFeatureBranchExists(m.issue.Number)
+		worktreeExists := checkWorktreeExists(m.replSession.currentProject.Name, m.issue.Number)
+
+		var worktreeSetupCmd string
+		if branchExists && worktreeExists {
+			// Both exist - just navigate to worktree and start Claude
+			// Need to get the absolute path to the existing worktree
+			worktreeAbsPath := fmt.Sprintf("%s/%s", m.replSession.currentProject.Path, worktreeName)
+			worktreeSetupCmd = fmt.Sprintf("cd \"%s\" && %s",
+				worktreeAbsPath, claudeCmd)
+		} else {
+			// Create worktree and branch, then start Claude
+			worktreeSetupCmd = fmt.Sprintf("cd \"%s\" && git worktree add %s -b %s && cd %s && %s",
+				m.replSession.currentProject.Path, worktreeName, branchName, worktreeName, claudeCmd)
+		}
 
 		// Open new terminal with worktree setup and claude command based on OS
 		var cmd *exec.Cmd
@@ -583,6 +698,63 @@ func (m IssueDetailModel) handleClose() (IssueDetailModel, tea.Cmd) {
 	return m, SwitchToView(ViewCloseReason, closeData)
 }
 
+// finishIssueDetail handles finishing an in-progress issue from detail view
+func (m IssueDetailModel) finishIssueDetail() tea.Cmd {
+	return func() tea.Msg {
+		// Get the worktree path
+		worktreeName := generateWorktreeName(m.replSession.currentProject.Name, m.issue.Number)
+		branchName := generateBranchName(m.issue.Number)
+		worktreeAbsPath := fmt.Sprintf("%s/%s", m.replSession.currentProject.Path, worktreeName)
+		
+		// Stage all changes
+		cmd := exec.Command("git", "add", ".")
+		cmd.Dir = worktreeAbsPath
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Failed to stage changes: %v\n", err)
+			return BackToPreviousView()
+		}
+		
+		// Check if there are changes to commit
+		cmd = exec.Command("git", "diff", "--cached", "--quiet")
+		cmd.Dir = worktreeAbsPath
+		if cmd.Run() == nil {
+			fmt.Printf("No changes to commit\n")
+			return BackToPreviousView()
+		}
+		
+		// Commit changes
+		commitMsg := fmt.Sprintf("feat: resolve issue #%d - %s", m.issue.Number, m.issue.Title)
+		cmd = exec.Command("git", "commit", "-m", commitMsg)
+		cmd.Dir = worktreeAbsPath
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Failed to commit changes: %v\n", err)
+			return BackToPreviousView()
+		}
+		
+		// Push branch
+		cmd = exec.Command("git", "push", "-u", "origin", branchName)
+		cmd.Dir = worktreeAbsPath
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Failed to push branch: %v\n", err)
+			return BackToPreviousView()
+		}
+		
+		// Create pull request using gh CLI
+		prTitle := fmt.Sprintf("feat: resolve issue #%d - %s", m.issue.Number, m.issue.Title)
+		prBody := fmt.Sprintf("Closes #%d\n\n%s", m.issue.Number, m.issue.Body)
+		cmd = exec.Command("gh", "pr", "create", "--title", prTitle, "--body", prBody)
+		cmd.Dir = worktreeAbsPath
+		output, err := cmd.Output()
+		if err != nil {
+			fmt.Printf("Failed to create PR: %v\n", err)
+			return BackToPreviousView()
+		}
+		
+		fmt.Printf("✅ Issue #%d finished successfully!\nPR created: %s\n", m.issue.Number, string(output))
+		return BackToPreviousView()
+	}
+}
+
 func (m IssueDetailModel) View() string {
 	var content strings.Builder
 
@@ -641,12 +813,28 @@ func (m IssueDetailModel) View() string {
 	deleteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true) // Red for delete
 	backStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Bold(true)   // Gray for back
 
-	// Actions displayed on single horizontal line with colored letters
-	actionData := []string{
-		chatStyle.Render("d") + " Chat",
-		openStyle.Render("s") + " Start",
-		deleteStyle.Render("c") + " Close",
-		backStyle.Render("q") + " Back",
+	// Check if issue is in progress to show appropriate action text
+	var startAction string
+	var actionData []string
+	
+	if isIssueInProgress(m.replSession.currentProject.Name, m.issue.Number) {
+		startAction = openStyle.Render("s") + " Continue"
+		finishStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true) // Green for finish
+		actionData = []string{
+			chatStyle.Render("d") + " Chat",
+			startAction,
+			finishStyle.Render("f") + " Finish",
+			deleteStyle.Render("c") + " Close",
+			backStyle.Render("q") + " Back",
+		}
+	} else {
+		startAction = openStyle.Render("s") + " Start"
+		actionData = []string{
+			chatStyle.Render("d") + " Chat",
+			startAction,
+			deleteStyle.Render("c") + " Close",
+			backStyle.Render("q") + " Back",
+		}
 	}
 
 	// Join all actions with proper spacing

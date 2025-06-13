@@ -25,6 +25,7 @@ type Issue struct {
 type IssueManager struct {
 	githubService *GitHubService
 	configManager *ConfigManager
+	gitOperations *GitOperations
 	projectPath   string
 }
 
@@ -57,8 +58,47 @@ func NewIssueManager(projectPath string, configManager *ConfigManager) (*IssueMa
 	return &IssueManager{
 		githubService: githubService,
 		configManager: configManager,
+		gitOperations: nil, // Will be set via SetGitOperations
 		projectPath:   projectPath,
 	}, nil
+}
+
+// SetGitOperations sets the GitOperations instance for the IssueManager
+func (im *IssueManager) SetGitOperations(ops *GitOperations) {
+	im.gitOperations = ops
+}
+
+// generateBranchName creates a feature branch name for an issue
+func (im *IssueManager) generateBranchName(issueID int) string {
+	return fmt.Sprintf("feature/issue-%d", issueID)
+}
+
+// checkBranchExists checks if a branch exists locally
+func (im *IssueManager) checkBranchExists(branchName string) bool {
+	// Use git operations if available
+	if im.gitOperations == nil {
+		return false
+	}
+	branches, err := im.gitOperations.ListBranches()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(branches, branchName)
+}
+
+// checkRemoteBranchExists checks if a branch exists on remote
+func (im *IssueManager) checkRemoteBranchExists(branchName string) bool {
+	// Use git operations if available
+	if im.gitOperations == nil {
+		return false
+	}
+	branches, err := im.gitOperations.ListBranches()
+	if err != nil {
+		return false
+	}
+	// Look for origin/branchName in the output
+	remoteBranchName := fmt.Sprintf("origin/%s", branchName)
+	return strings.Contains(branches, remoteBranchName)
 }
 
 // ListIssues returns GitHub issues for the repository (open issues + closed issues from last 24 hours)
@@ -259,6 +299,29 @@ func (im *IssueManager) CloseIssue(number int, closeReason string) error {
 	if commentErr != nil {
 		// Log error but don't fail the close operation
 		fmt.Printf("Warning: Failed to add close reason comment to GitHub issue #%d: %v\n", number, commentErr)
+	}
+
+	// Delete feature branch if it exists (and gitOperations is available)
+	if im.gitOperations != nil {
+		branchName := im.generateBranchName(number)
+		
+		// Check if local branch exists and delete it
+		if im.checkBranchExists(branchName) {
+			fmt.Printf("Deleting local feature branch: %s\n", branchName)
+			err := im.gitOperations.DeleteBranch(branchName, true) // Force delete to handle unmerged branches
+			if err != nil {
+				fmt.Printf("Warning: Failed to delete local branch %s: %v\n", branchName, err)
+			}
+		}
+		
+		// Check if remote branch exists and delete it
+		if im.checkRemoteBranchExists(branchName) {
+			fmt.Printf("Deleting remote feature branch: %s\n", branchName)
+			err := im.gitOperations.DeleteRemoteBranch(branchName)
+			if err != nil {
+				fmt.Printf("Warning: Failed to delete remote branch %s: %v\n", branchName, err)
+			}
+		}
 	}
 
 	return nil

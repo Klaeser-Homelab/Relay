@@ -214,6 +214,43 @@ func (g *GitOperations) UndoLastCommit() error {
 	return nil
 }
 
+func (g *GitOperations) DeleteBranch(branchName string, force bool) error {
+	g.logger.Printf("Deleting branch: %s", branchName)
+
+	var command string
+	if force {
+		command = fmt.Sprintf("Delete the git branch '%s' forcefully (even if not merged). Use git branch -D.", branchName)
+	} else {
+		command = fmt.Sprintf("Delete the git branch '%s' safely (only if merged). Use git branch -d.", branchName)
+	}
+
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
+	if err != nil {
+		return fmt.Errorf("failed to delete branch via Claude: %w", err)
+	}
+
+	g.logger.Printf("Delete branch response: %s", response)
+	fmt.Printf("Delete branch result:\n%s\n", response)
+
+	return nil
+}
+
+func (g *GitOperations) DeleteRemoteBranch(branchName string) error {
+	g.logger.Printf("Deleting remote branch: %s", branchName)
+
+	command := fmt.Sprintf("Delete the remote git branch '%s' using git push origin --delete.", branchName)
+
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
+	if err != nil {
+		return fmt.Errorf("failed to delete remote branch via Claude: %w", err)
+	}
+
+	g.logger.Printf("Delete remote branch response: %s", response)
+	fmt.Printf("Delete remote branch result:\n%s\n", response)
+
+	return nil
+}
+
 func (g *GitOperations) Close() error {
 	if g.llmProvider != nil {
 		return g.llmProvider.Close()
