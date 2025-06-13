@@ -1,4 +1,5 @@
 # Relay Server executables
+relay
 server/relay
 server/relay.exe
 

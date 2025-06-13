@@ -112,6 +112,39 @@ func (g *GitOperations) ListBranches() (string, error) {
 	return response, nil
 }
 
+func (g *GitOperations) DeleteBranch(branchName string, force bool) error {
+	g.logger.Printf("Deleting local branch: %s (force: %v)", branchName, force)
+
+	var command string
+	if force {
+		command = fmt.Sprintf("Force delete the local git branch '%s' using 'git branch -D %s'", branchName, branchName)
+	} else {
+		command = fmt.Sprintf("Delete the local git branch '%s' using 'git branch -d %s'", branchName, branchName)
+	}
+
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
+	if err != nil {
+		return fmt.Errorf("failed to delete branch via Claude: %w", err)
+	}
+
+	g.logger.Printf("Delete branch response: %s", response)
+	return nil
+}
+
+func (g *GitOperations) DeleteRemoteBranch(branchName string) error {
+	g.logger.Printf("Deleting remote branch: %s", branchName)
+
+	command := fmt.Sprintf("Delete the remote git branch '%s' using 'git push origin --delete %s'", branchName, branchName)
+
+	response, err := g.llmProvider.SendMessage(context.Background(), command)
+	if err != nil {
+		return fmt.Errorf("failed to delete remote branch via Claude: %w", err)
+	}
+
+	g.logger.Printf("Delete remote branch response: %s", response)
+	return nil
+}
+
 func (g *GitOperations) Close() error {
 	if g.llmProvider != nil {
 		return g.llmProvider.Close()
