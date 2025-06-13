@@ -9,8 +9,9 @@ import (
 )
 
 func main() {
+	// If no arguments provided, start with default project's TUI
 	if len(os.Args) < 2 {
-		printUsage()
+		handleStartTUI("")
 		return
 	}
 
@@ -22,6 +23,8 @@ func main() {
 	case "open":
 		handleOpenProject()
 	case "start":
+		handleStartTUI(os.Args[2])
+	case "repl":
 		handleStartREPL()
 	case "list":
 		handleListProjects()
@@ -38,8 +41,8 @@ func main() {
 	case "sync":
 		handleGitHubSync()
 	default:
-		fmt.Printf("Unknown command: %s\n", command)
-		printUsage()
+		// If it's not a known command, treat it as a project name
+		handleStartTUI(command)
 	}
 }
 
@@ -47,9 +50,12 @@ func printUsage() {
 	fmt.Println("Relay Server - AI-powered project management")
 	fmt.Println("")
 	fmt.Println("Usage:")
+	fmt.Println("  relay                   Start TUI with current/default project")
+	fmt.Println("  relay <project>         Start TUI with specific project")
 	fmt.Println("  relay add -p <path>     Add a new project")
 	fmt.Println("  relay open <name>       Open/switch to a project")
-	fmt.Println("  relay start <name>      Start interactive REPL for a project")
+	fmt.Println("  relay start <name>      Start TUI with specific project")
+	fmt.Println("  relay repl <name>       Start REPL mode for a project")
 	fmt.Println("  relay list              List all projects")
 	fmt.Println("  relay remove <name>     Remove a project")
 	fmt.Println("  relay commit            Smart commit with AI-generated message")
@@ -312,10 +318,49 @@ func handleProjectStatus() {
 	fmt.Printf("Last Opened: %s\n", project.LastOpened.Format("2006-01-02 15:04:05"))
 }
 
+func handleStartTUI(projectName string) {
+	// If no project name provided, try to get the active project
+	if projectName == "" {
+		pm, err := NewProjectManager()
+		if err != nil {
+			fmt.Printf("Error initializing project manager: %v\n", err)
+			os.Exit(1)
+		}
+		defer pm.Close()
+
+		project, err := pm.GetActiveProject()
+		if err != nil {
+			// No active project, show available projects
+			projects, listErr := pm.ListProjects()
+			if listErr != nil || len(projects) == 0 {
+				fmt.Println("No projects found. Use 'relay add -p <path>' to add a project first.")
+				os.Exit(1)
+			}
+			// Use the first project as default
+			projectName = projects[0].Name
+		} else {
+			projectName = project.Name
+		}
+	}
+
+	// Create and start TUI session
+	session, err := NewREPLSession(projectName)
+	if err != nil {
+		fmt.Printf("Error creating TUI session: %v\n", err)
+		os.Exit(1)
+	}
+
+	err = session.Start()
+	if err != nil {
+		fmt.Printf("Error running TUI session: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func handleStartREPL() {
 	if len(os.Args) < 3 {
 		fmt.Println("Error: Project name is required")
-		fmt.Println("Usage: relay start <project-name>")
+		fmt.Println("Usage: relay repl <project-name>")
 		os.Exit(1)
 	}
 
@@ -336,95 +381,6 @@ func handleStartREPL() {
 }
 
 func handleGitHubSync() {
-	if len(os.Args) < 3 {
-		fmt.Println("Error: Project name is required")
-		fmt.Println("Usage: relay sync <project-name> [pull|push|bidirectional]")
-		os.Exit(1)
-	}
-
-	projectName := os.Args[2]
-	syncDirection := "bidirectional"
-	if len(os.Args) >= 4 {
-		syncDirection = os.Args[3]
-	}
-
-	// Get current working directory
-	projectPath, err := os.Getwd()
-	if err != nil {
-		fmt.Printf("Error getting working directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Create managers
-	configManager, err := NewConfigManager(projectPath)
-	if err != nil {
-		fmt.Printf("Error creating config manager: %v\n", err)
-		os.Exit(1)
-	}
-
-	issueManager, err := NewIssueManager(projectPath)
-	if err != nil {
-		fmt.Printf("Error creating issue manager: %v\n", err)
-		os.Exit(1)
-	}
-
-	githubService := NewGitHubService(configManager, projectPath)
-	syncManager := NewGitHubSyncManager(issueManager, githubService, configManager)
-
-	// Auto-detect and configure GitHub repository if not set
-	githubConfig := configManager.GetGitHubConfig()
-	if githubConfig.Repository == "" {
-		fmt.Print("Detecting GitHub repository... ")
-		repo, err := githubService.DetectRepository()
-		if err != nil {
-			fmt.Printf("Failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Found: %s\n", repo)
-
-		err = configManager.UpdateGitHubRepository(repo)
-		if err != nil {
-			fmt.Printf("Error updating repository config: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	fmt.Printf("Starting %s sync for project '%s'...\n", syncDirection, projectName)
-
-	var result *SyncResult
-	switch syncDirection {
-	case "pull":
-		result, err = syncManager.SyncPull()
-	case "push":
-		result, err = syncManager.SyncPush()
-	case "bidirectional":
-		result, err = syncManager.SyncBidirectional()
-	default:
-		fmt.Printf("Invalid sync direction: %s. Use 'pull', 'push', or 'bidirectional'\n", syncDirection)
-		os.Exit(1)
-	}
-
-	if err != nil {
-		fmt.Printf("Sync failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Print results
-	fmt.Printf("\n=== Sync Complete ===\n")
-	fmt.Printf("Success: %t\n", result.Success)
-	fmt.Printf("Created Local: %d\n", result.CreatedLocal)
-	fmt.Printf("Created GitHub: %d\n", result.CreatedGitHub)
-	fmt.Printf("Updated Local: %d\n", result.UpdatedLocal)
-	fmt.Printf("Updated GitHub: %d\n", result.UpdatedGitHub)
-
-	if len(result.Errors) > 0 {
-		fmt.Printf("\nErrors (%d):\n", len(result.Errors))
-		for _, err := range result.Errors {
-			fmt.Printf("  - %s\n", err)
-		}
-	}
-
-	if result.ConflictsFound > 0 {
-		fmt.Printf("\nConflicts Found: %d\n", result.ConflictsFound)
-	}
+	fmt.Println("Note: Sync functionality has been replaced with direct GitHub integration.")
+	fmt.Println("Issues are now managed directly on GitHub. Use the TUI or CLI to interact with GitHub issues.")
 }

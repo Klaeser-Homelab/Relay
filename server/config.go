@@ -21,11 +21,11 @@ type IssueTrackerConfig struct {
 
 // GitHubConfig contains GitHub-specific settings
 type GitHubConfig struct {
-	Repository     string `json:"repository"`      // "owner/repo" format
-	SyncDirection  string `json:"sync_direction"`  // "bidirectional", "push", "pull"
-	AutoSync       bool   `json:"auto_sync"`       // Enable automatic syncing
-	SyncInterval   int    `json:"sync_interval"`   // Minutes between syncs (0 = disabled)
-	LastSyncedAt   string `json:"last_synced_at"`  // ISO timestamp of last successful sync
+	Repository    string `json:"repository"`     // "owner/repo" format
+	SyncDirection string `json:"sync_direction"` // "bidirectional", "push", "pull"
+	AutoSync      bool   `json:"auto_sync"`      // Enable automatic syncing
+	SyncInterval  int    `json:"sync_interval"`  // Minutes between syncs (0 = disabled)
+	LastSyncedAt  string `json:"last_synced_at"` // ISO timestamp of last successful sync
 }
 
 // LLMConfig contains LLM provider settings
@@ -43,18 +43,18 @@ type ConfigManager struct {
 // NewConfigManager creates a new config manager
 func NewConfigManager(projectPath string) (*ConfigManager, error) {
 	configFile := filepath.Join(projectPath, ".relay", "config.json")
-	
+
 	// Ensure the .relay directory exists
 	relayDir := filepath.Dir(configFile)
 	if err := os.MkdirAll(relayDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
-	
+
 	cm := &ConfigManager{
 		dataFile: configFile,
 		config:   getDefaultConfig(),
 	}
-	
+
 	// Load existing config if it exists
 	if err := cm.loadConfig(); err != nil {
 		// If config doesn't exist, save default config
@@ -66,7 +66,7 @@ func NewConfigManager(projectPath string) (*ConfigManager, error) {
 			return nil, fmt.Errorf("failed to load config: %w", err)
 		}
 	}
-	
+
 	return cm, nil
 }
 
@@ -106,22 +106,22 @@ func (cm *ConfigManager) loadConfig() error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Try to unmarshal with the new format first
 	if err := json.Unmarshal(data, &cm.config); err != nil {
 		// If that fails, try to load with the old format and migrate
 		var oldConfig struct {
 			IssueTracker IssueTrackerConfig `json:"issue_tracker"`
 			LLMs         struct {
-				Planning  string `json:"planning"`  
-				Executing string `json:"executing"` 
+				Planning  string `json:"planning"`
+				Executing string `json:"executing"`
 			} `json:"llms"`
 		}
-		
+
 		if err := json.Unmarshal(data, &oldConfig); err != nil {
 			return fmt.Errorf("failed to parse config (tried both new and old formats): %w", err)
 		}
-		
+
 		// Migrate old format to new format
 		cm.config.IssueTracker = oldConfig.IssueTracker
 		cm.config.LLMs = LLMConfig{
@@ -138,11 +138,11 @@ func (cm *ConfigManager) loadConfig() error {
 				Options:   make(map[string]string),
 			},
 		}
-		
+
 		// Save the migrated config
 		return cm.saveConfig()
 	}
-	
+
 	return nil
 }
 
@@ -166,7 +166,7 @@ func (cm *ConfigManager) saveConfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	
+
 	return os.WriteFile(cm.dataFile, data, 0644)
 }
 

@@ -41,9 +41,9 @@ func NewREPLModel(replSession *REPLSession) REPLModel {
 // SetContext sets the current REPL context and clears input
 func (m *REPLModel) SetContext(context *REPLContext) {
 	m.context = context
-	m.input = ""      // Clear any existing input
-	m.cursor = 0      // Reset history cursor
-	
+	m.input = "" // Clear any existing input
+	m.cursor = 0 // Reset history cursor
+
 	// Add context message to output
 	if context != nil {
 		m.output = append(m.output, fmt.Sprintf("📋 Context loaded: %s", context.DisplayName))
@@ -67,33 +67,33 @@ func (m REPLModel) Update(msg tea.Msg) (REPLModel, tea.Cmd) {
 			if m.input == "" {
 				return m, nil
 			}
-			
+
 			// Add to history
 			m.history = append(m.history, m.input)
 			if len(m.history) > m.maxHistory {
 				m.history = m.history[1:]
 			}
-			
+
 			// Add input to output
 			m.output = append(m.output, fmt.Sprintf("> %s", m.input))
-			
+
 			// Process the command
 			return m.processCommand(m.input)
-			
+
 		case "backspace":
 			if len(m.input) > 0 {
 				m.input = m.input[:len(m.input)-1]
 			}
-			
+
 		case "ctrl+c":
 			return m, tea.Quit
-			
+
 		case "up":
 			if len(m.history) > 0 && m.cursor < len(m.history) {
 				m.cursor++
 				m.input = m.history[len(m.history)-m.cursor]
 			}
-			
+
 		case "down":
 			if m.cursor > 1 {
 				m.cursor--
@@ -102,7 +102,7 @@ func (m REPLModel) Update(msg tea.Msg) (REPLModel, tea.Cmd) {
 				m.cursor = 0
 				m.input = ""
 			}
-			
+
 		default:
 			// Add character to input
 			if len(msg.String()) == 1 {
@@ -111,7 +111,7 @@ func (m REPLModel) Update(msg tea.Msg) (REPLModel, tea.Cmd) {
 			}
 		}
 	}
-	
+
 	return m, nil
 }
 
@@ -120,7 +120,7 @@ func (m REPLModel) processCommand(input string) (REPLModel, tea.Cmd) {
 	if strings.HasPrefix(input, "/") {
 		return m.handleREPLCommand(input)
 	}
-	
+
 	// Handle direct Claude commands
 	return m.handleClaudeCommand(input)
 }
@@ -132,21 +132,21 @@ func (m REPLModel) handleREPLCommand(input string) (REPLModel, tea.Cmd) {
 		m.input = ""
 		return m, nil
 	}
-	
+
 	command := parts[0]
-	
+
 	switch command {
 	case "/help", "/h":
 		m.output = append(m.output, m.getHelpText())
-		
+
 	case "/exit", "/quit", "/q":
 		return m, tea.Quit
-		
+
 	case "/issues":
 		// Switch to issues view
 		m.input = ""
 		return m, SwitchToView(ViewIssueList, nil)
-		
+
 	case "/issue":
 		if len(parts) < 2 {
 			m.output = append(m.output, "Error: usage: /issue <content>")
@@ -154,40 +154,40 @@ func (m REPLModel) handleREPLCommand(input string) (REPLModel, tea.Cmd) {
 			content := strings.Join(parts[1:], " ")
 			return m.handleAddIssue(content)
 		}
-		
+
 	case "/status":
 		return m.handleStatus()
-		
+
 	case "/commit":
 		m.output = append(m.output, "🚀 Starting smart commit...")
 		return m.handleCommit()
-		
+
 	case "/push":
 		m.output = append(m.output, "📤 Pushing to remote...")
 		return m.handlePush()
-		
+
 	case "/commit-push":
 		m.output = append(m.output, "🚀📤 Starting smart commit and push...")
 		return m.handleCommitPush()
-		
+
 	case "/list":
 		return m.handleListProjects()
-		
+
 	case "/pwd":
 		m.handlePwd()
-		
+
 	case "/info":
 		m.handleProjectInfo()
-		
+
 	case "/config":
 		// Switch to config view
 		m.input = ""
 		return m, SwitchToView(ViewConfig, nil)
-		
+
 	default:
 		m.output = append(m.output, fmt.Sprintf("Error: unknown command: %s (type /help for available commands)", command))
 	}
-	
+
 	m.input = ""
 	return m, nil
 }
@@ -207,13 +207,13 @@ func (m REPLModel) handleClaudeCommand(input string) (REPLModel, tea.Cmd) {
 			}
 		}
 	}
-	
+
 	if contextualInput == "" {
 		contextualInput = input
 	}
-	
+
 	m.output = append(m.output, fmt.Sprintf("🤖 Sending to Claude: %s", input))
-	
+
 	// In a real implementation, this would be async
 	response, err := m.replSession.llmManager.GetExecutingProvider().SendMessage(context.Background(), contextualInput)
 	if err != nil {
@@ -221,7 +221,7 @@ func (m REPLModel) handleClaudeCommand(input string) (REPLModel, tea.Cmd) {
 	} else {
 		m.output = append(m.output, fmt.Sprintf("Claude: %s", response))
 	}
-	
+
 	m.input = ""
 	return m, nil
 }
@@ -229,20 +229,21 @@ func (m REPLModel) handleClaudeCommand(input string) (REPLModel, tea.Cmd) {
 func (m REPLModel) buildIssuesContext(input string, issues []Issue) string {
 	var contextBuilder strings.Builder
 	contextBuilder.WriteString("Here are the current issues in this project:\n\n")
-	
+
 	for _, issue := range issues {
 		var issueDesc string
+
 		if len(issue.Labels) > 0 {
 			labelsStr := strings.Join(issue.Labels, ", ")
-			issueDesc = fmt.Sprintf("Issue #%d: %s [%s] (%s)\n", 
-				issue.ID, issue.Content, labelsStr, issue.Status)
+			issueDesc = fmt.Sprintf("Issue #%d: %s [%s] (%s)\n",
+				issue.Number, issue.Title, labelsStr, issue.State)
 		} else {
-			issueDesc = fmt.Sprintf("Issue #%d: %s (%s)\n", 
-				issue.ID, issue.Content, issue.Status)
+			issueDesc = fmt.Sprintf("Issue #%d: %s (%s)\n",
+				issue.Number, issue.Title, issue.State)
 		}
 		contextBuilder.WriteString(issueDesc)
 	}
-	
+
 	contextBuilder.WriteString(fmt.Sprintf("\nUser question about these issues: %s", input))
 	return contextBuilder.String()
 }
@@ -250,17 +251,22 @@ func (m REPLModel) buildIssuesContext(input string, issues []Issue) string {
 func (m REPLModel) buildIssueContext(input string, issue Issue) string {
 	var contextBuilder strings.Builder
 	contextBuilder.WriteString("I'm working on this specific issue:\n\n")
-	contextBuilder.WriteString(fmt.Sprintf("Issue #%d: %s\n", issue.ID, issue.Content))
-	
+	contextBuilder.WriteString(fmt.Sprintf("Issue #%d: %s\n", issue.Number, issue.Title))
+
+	if issue.Body != "" {
+		contextBuilder.WriteString(fmt.Sprintf("Description: %s\n", issue.Body))
+	}
+
 	if len(issue.Labels) > 0 {
 		labelsStr := strings.Join(issue.Labels, ", ")
 		contextBuilder.WriteString(fmt.Sprintf("Labels: %s\n", labelsStr))
 	}
-	
-	contextBuilder.WriteString(fmt.Sprintf("Status: %s\n", issue.Status))
-	contextBuilder.WriteString(fmt.Sprintf("Created: %s\n", formatRelativeTime(issue.Timestamp)))
+
+	contextBuilder.WriteString(fmt.Sprintf("State: %s\n", issue.State))
+	contextBuilder.WriteString(fmt.Sprintf("Created: %s\n", formatRelativeTime(issue.CreatedAt)))
+	contextBuilder.WriteString(fmt.Sprintf("URL: %s\n", issue.URL))
 	contextBuilder.WriteString(fmt.Sprintf("\nUser question about this issue: %s", input))
-	
+
 	return contextBuilder.String()
 }
 
@@ -272,13 +278,13 @@ func (m REPLModel) handleAddIssue(content string) (REPLModel, tea.Cmd) {
 		var issueMsg string
 		if len(issue.Labels) > 0 {
 			labelsStr := strings.Join(issue.Labels, ", ")
-			issueMsg = fmt.Sprintf("📋 Issue #%d captured: \"%s\" [%s]", issue.ID, issue.Content, labelsStr)
+			issueMsg = fmt.Sprintf("📋 Issue #%d created: \"%s\" [%s]", issue.Number, issue.Title, labelsStr)
 		} else {
-			issueMsg = fmt.Sprintf("📋 Issue #%d captured: \"%s\"", issue.ID, issue.Content)
+			issueMsg = fmt.Sprintf("📋 Issue #%d created: \"%s\"", issue.Number, issue.Title)
 		}
 		m.output = append(m.output, issueMsg)
 	}
-	
+
 	m.input = ""
 	return m, nil
 }
@@ -287,7 +293,7 @@ func (m REPLModel) handleStatus() (REPLModel, tea.Cmd) {
 	m.output = append(m.output, fmt.Sprintf("Project Status for '%s':", m.replSession.currentProject.Name))
 	m.output = append(m.output, fmt.Sprintf("Path: %s", m.replSession.currentProject.Path))
 	m.output = append(m.output, fmt.Sprintf("Last Opened: %s", m.replSession.currentProject.LastOpened.Format("2006-01-02 15:04:05")))
-	
+
 	// Get git status through Claude
 	response, err := m.replSession.llmManager.GetExecutingProvider().SendMessage(context.Background(), "Show me the current git status and a brief summary of any changes.")
 	if err != nil {
@@ -295,7 +301,7 @@ func (m REPLModel) handleStatus() (REPLModel, tea.Cmd) {
 	} else {
 		m.output = append(m.output, fmt.Sprintf("Git Status:\n%s", response))
 	}
-	
+
 	m.input = ""
 	return m, nil
 }
@@ -307,7 +313,7 @@ func (m REPLModel) handleCommit() (REPLModel, tea.Cmd) {
 	} else {
 		m.output = append(m.output, "✅ Smart commit completed successfully")
 	}
-	
+
 	m.input = ""
 	return m, nil
 }
@@ -319,7 +325,7 @@ func (m REPLModel) handlePush() (REPLModel, tea.Cmd) {
 	} else {
 		m.output = append(m.output, "✅ Push completed successfully")
 	}
-	
+
 	m.input = ""
 	return m, nil
 }
@@ -331,7 +337,7 @@ func (m REPLModel) handleCommitPush() (REPLModel, tea.Cmd) {
 	} else {
 		m.output = append(m.output, "✅ Smart commit and push completed successfully")
 	}
-	
+
 	m.input = ""
 	return m, nil
 }
@@ -343,13 +349,13 @@ func (m REPLModel) handleListProjects() (REPLModel, tea.Cmd) {
 		m.input = ""
 		return m, nil
 	}
-	
+
 	if len(projects) == 0 {
 		m.output = append(m.output, "No projects found.")
 		m.input = ""
 		return m, nil
 	}
-	
+
 	m.output = append(m.output, "Projects:")
 	for _, project := range projects {
 		marker := "  "
@@ -358,7 +364,7 @@ func (m REPLModel) handleListProjects() (REPLModel, tea.Cmd) {
 		}
 		m.output = append(m.output, fmt.Sprintf("%s%s - %s", marker, project.Name, project.Path))
 	}
-	
+
 	m.input = ""
 	return m, nil
 }
@@ -407,19 +413,19 @@ Direct Claude Commands:
 
 func (m REPLModel) View() string {
 	var content strings.Builder
-	
+
 	// Title
 	title := titleStyle.Render(fmt.Sprintf("🚀 Relay REPL - Project: %s", m.replSession.currentProject.Name))
 	content.WriteString(title + "\n")
-	content.WriteString(fmt.Sprintf("📁 Working directory: %s\n\n", m.replSession.currentProject.Path))
-	
+	content.WriteString(fmt.Sprintf("📁 Twerking directory: %s\n\n", m.replSession.currentProject.Path))
+
 	// Output history (scrollable)
 	maxLines := m.height - 6 // Reserve space for title, input, and help
 	startIdx := 0
 	if len(m.output) > maxLines {
 		startIdx = len(m.output) - maxLines
 	}
-	
+
 	for i := startIdx; i < len(m.output); i++ {
 		line := m.output[i]
 		// Apply gray styling to past commands (lines starting with ">")
@@ -429,7 +435,7 @@ func (m REPLModel) View() string {
 			content.WriteString(line + "\n")
 		}
 	}
-	
+
 	// Current input prompt with context
 	var promptPrefix string
 	if m.context != nil {
@@ -437,24 +443,24 @@ func (m REPLModel) View() string {
 	} else {
 		promptPrefix = ""
 	}
-	
+
 	var prompt string
 	if promptPrefix != "" {
 		prompt = fmt.Sprintf("%s> %s", promptPrefix, m.input)
 	} else {
 		prompt = fmt.Sprintf("> %s", m.input)
 	}
-	
+
 	// Create full-width prompt box with text wrapping
 	promptStyle := selectedStyle.
 		Width(m.width - 2) // Account for border
 		//Align(lipgloss.Left)
-	
+
 	content.WriteString("\n" + promptStyle.Render(prompt))
-	
+
 	// Help text
 	help := helpStyle.Render("Type /help for commands, /issues for issue management, Ctrl+C to quit")
 	content.WriteString("\n\n" + help)
-	
+
 	return content.String()
 }
