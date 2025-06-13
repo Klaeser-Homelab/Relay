@@ -509,7 +509,7 @@ func (m IssueDetailModel) openClaudeCodeTerminal() tea.Cmd {
 		}
 
 		// Add planning instruction
-		promptBuilder.WriteString(fmt.Sprintf("\nRead the title and body and create a plan for executing it.\n"))
+		promptBuilder.WriteString(fmt.Sprintf("\nWhat follows is a GitHub issue. Read the Issue and Description and create a plan for implementing it then ask me what I think of the plan. Do not start implementing the plan or make any changes.\n"))
 
 		// Add worktree information to the prompt
 		promptBuilder.WriteString(fmt.Sprintf("\nWorktree Setup:\n"))
