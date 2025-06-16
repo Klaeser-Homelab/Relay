@@ -401,6 +401,138 @@ func createUpdatedBody(existingBody, plan string) string {
 	}
 }
 
+func generatePRBodyFromChanges(workingDir string, issueNumber int) (string, error) {
+	// Get file changes
+	changes, err := shared.GetCommitFileChanges(workingDir, "main")
+	if err != nil {
+		return "", fmt.Errorf("failed to get file changes: %w", err)
+	}
+
+	// Get commit messages for additional context
+	commitMessages, err := shared.GetCommitMessages(workingDir, "main")
+	if err != nil {
+		// Don't fail if we can't get commit messages, just continue
+		commitMessages = []string{}
+	}
+
+	// Generate summary from changes
+	var summary strings.Builder
+	
+	// Create a high-level summary based on file changes
+	summary.WriteString("## Summary\n\n")
+	if len(changes) == 0 {
+		summary.WriteString("No file changes detected")
+	} else {
+		summary.WriteString(generateHighLevelSummary(changes, commitMessages))
+	}
+	summary.WriteString("\n\n")
+
+	// Add detailed changes
+	if len(changes) > 0 {
+		changeDetails := shared.GenerateChangeSummary(changes)
+		summary.WriteString(changeDetails)
+	}
+
+	// Add closing statement
+	summary.WriteString(fmt.Sprintf("\nCloses #%d", issueNumber))
+
+	return summary.String(), nil
+}
+
+func generateHighLevelSummary(changes []shared.FileChange, commitMessages []string) string {
+	// Count different types of changes
+	added := 0
+	modified := 0
+	deleted := 0
+	renamed := 0
+
+	// Track file types
+	fileTypes := make(map[string]int)
+
+	for _, change := range changes {
+		switch {
+		case strings.HasPrefix(change.Status, "A"):
+			added++
+		case strings.HasPrefix(change.Status, "M"):
+			modified++
+		case strings.HasPrefix(change.Status, "D"):
+			deleted++
+		case strings.HasPrefix(change.Status, "R"):
+			renamed++
+		}
+
+		// Categorize file type
+		filePath := change.FilePath
+		if change.NewPath != "" {
+			filePath = change.NewPath
+		}
+		
+		category := categorizeFile(filePath)
+		fileTypes[category]++
+	}
+
+	// Build summary
+	var parts []string
+
+	if added > 0 {
+		parts = append(parts, fmt.Sprintf("added %d files", added))
+	}
+	if modified > 0 {
+		parts = append(parts, fmt.Sprintf("modified %d files", modified))
+	}
+	if deleted > 0 {
+		parts = append(parts, fmt.Sprintf("deleted %d files", deleted))
+	}
+	if renamed > 0 {
+		parts = append(parts, fmt.Sprintf("renamed %d files", renamed))
+	}
+
+	summary := "Updated project with " + strings.Join(parts, ", ")
+
+	// Add file type context if meaningful
+	if len(fileTypes) > 0 {
+		var fileTypeList []string
+		for fileType, count := range fileTypes {
+			if count > 1 {
+				fileTypeList = append(fileTypeList, fmt.Sprintf("%s (%d)", fileType, count))
+			} else {
+				fileTypeList = append(fileTypeList, fileType)
+			}
+		}
+		if len(fileTypeList) <= 3 {
+			summary += " including " + strings.Join(fileTypeList, ", ")
+		}
+	}
+
+	return summary + "."
+}
+
+// categorizeFile determines the category/type of a file (duplicate from shared for local use)
+func categorizeFile(filePath string) string {
+	lower := strings.ToLower(filePath)
+
+	if strings.Contains(lower, "test") || strings.Contains(lower, "spec") {
+		return "tests"
+	}
+	if strings.HasSuffix(lower, ".md") || strings.Contains(lower, "readme") || strings.Contains(lower, "doc") {
+		return "documentation"
+	}
+	if strings.HasSuffix(lower, ".go") {
+		return "Go code"
+	}
+	if strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".ts") {
+		return "JavaScript/TypeScript"
+	}
+	if strings.HasSuffix(lower, ".tsx") || strings.HasSuffix(lower, ".jsx") {
+		return "React components"
+	}
+	if strings.HasSuffix(lower, ".json") || strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") {
+		return "configuration"
+	}
+
+	return "source files"
+}
+
 func finish(params FinishParams) (*FinishResult, error) {
 	// Determine issue number if not provided
 	issueNumber := params.IssueNumber
@@ -455,7 +587,14 @@ func finish(params FinishParams) (*FinishResult, error) {
 	// Auto-generate PR body if not provided
 	prBody := params.PrBody
 	if prBody == "" {
-		prBody = fmt.Sprintf("## Summary\n\n%s\n\n## Changes\n\n- Implemented solution for issue #%d\n\nCloses #%d", issue.Title, issueNumber, issueNumber)
+		// Try to generate PR body based on file changes
+		changeSummary, err := generatePRBodyFromChanges(params.WorkingDir, issueNumber)
+		if err != nil {
+			// Fallback to simple summary if change analysis fails
+			prBody = fmt.Sprintf("## Summary\n\n%s\n\n## Changes\n\n- Implemented solution for issue #%d\n\nCloses #%d", issue.Title, issueNumber, issueNumber)
+		} else {
+			prBody = changeSummary
+		}
 	}
 	
 	// Stage all changes
