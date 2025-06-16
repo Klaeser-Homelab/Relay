@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "issue-planner": {
+      "type": "stdio",
+      "command": "go run main.go",
+      "args": [],
+      "env": {}
+    }
+  }
+}
