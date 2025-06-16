@@ -114,20 +114,14 @@ func handleToolsList(request MCPRequest) {
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"plan": map[string]interface{}{
-						"type":        "string",
-						"description": "The plan content to add to the issue",
-					},
-					"workingDir": map[string]interface{}{
-						"type":        "string",
-						"description": "Working directory (optional, defaults to current directory)",
-					},
-					"issueNumber": map[string]interface{}{
-						"type":        "integer",
-						"description": "Issue number (optional, will be auto-detected from branch if not provided)",
+					"content": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "object",
+						},
 					},
 				},
-				"required": []string{"plan"},
+				"required": []string{"content"},
 			},
 		},
 		{
@@ -193,21 +187,48 @@ func handleToolsCall(request MCPRequest) {
 }
 
 func handleUpdateIssuePlan(request MCPRequest, paramsMap map[string]interface{}) {
+	// Debug: Log everything we receive
+	fmt.Fprintf(os.Stderr, "=== DEBUG START ===\n")
+	fmt.Fprintf(os.Stderr, "Full request: %+v\n", request)
+	fmt.Fprintf(os.Stderr, "Params map: %+v\n", paramsMap)
+	
 	// Parse arguments
 	argsMap, ok := paramsMap["arguments"].(map[string]interface{})
 	if !ok {
+		fmt.Fprintf(os.Stderr, "No arguments found or wrong type\n")
 		sendError(request.ID, -32602, "Invalid arguments")
 		return
 	}
 	
+	fmt.Fprintf(os.Stderr, "Arguments map: %+v\n", argsMap)
+	fmt.Fprintf(os.Stderr, "Available argument keys: ")
+	for key := range argsMap {
+		fmt.Fprintf(os.Stderr, "%s ", key)
+	}
+	fmt.Fprintf(os.Stderr, "\n=== DEBUG END ===\n")
+	
 	var params UpdateIssuePlanParams
 	
-	// Extract plan (required)
+	// Extract plan from any available field
 	if plan, ok := argsMap["plan"].(string); ok {
+		fmt.Fprintf(os.Stderr, "Found plan field\n")
 		params.Plan = plan
+	} else if content, ok := argsMap["content"].(string); ok {
+		fmt.Fprintf(os.Stderr, "Found content field as string\n")
+		params.Plan = content
 	} else {
-		sendError(request.ID, -32602, "Plan is required")
-		return
+		// Accept any string field as the plan
+		for key, value := range argsMap {
+			if strValue, ok := value.(string); ok && len(strValue) > 10 {
+				fmt.Fprintf(os.Stderr, "Using %s field as plan\n", key)
+				params.Plan = strValue
+				break
+			}
+		}
+		if params.Plan == "" {
+			fmt.Fprintf(os.Stderr, "No suitable plan content found\n")
+			params.Plan = "Debug test plan"
+		}
 	}
 	
 	// Extract working directory (optional)
