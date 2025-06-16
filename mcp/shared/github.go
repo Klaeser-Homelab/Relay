@@ -183,6 +183,35 @@ func (gs *GitHubService) parseGitHubIssue(raw map[string]interface{}) (GitHubIss
 	return issue, nil
 }
 
+// GitAdd stages all changes in the git repository
+func GitAdd(workingDir string) error {
+	// First find the git repository root
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = workingDir
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to find git root: %v", err)
+	}
+	
+	gitRoot := strings.TrimSpace(string(output))
+	
+	// Stage all changes from git root
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = gitRoot
+	
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to stage changes: %s", string(output))
+	}
+	
+	return nil
+}
+
+// GitCommit creates a commit with the given message
+func GitCommit(workingDir, message string) error {
+	cmd := exec.Command("git", "commit", "-m", message)
+	cmd.Dir = workingDir
+	
 // FileChange represents a file change in git
 type FileChange struct {
 	Status   string // A=added, M=modified, D=deleted, R=renamed
@@ -425,10 +454,20 @@ func GitCommit(workingDir, message string) error {
 	cmd := exec.Command("git", "commit", "-m", message)
 	cmd.Dir = workingDir
 
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to commit changes: %s", string(output))
 	}
+
+	
+	return nil
+}
+
+// GitPush pushes the current branch to origin
+func GitPush(workingDir string) error {
+	cmd := exec.Command("git", "push", "origin", "HEAD")
+	cmd.Dir = workingDir
 
 	return nil
 }
@@ -453,6 +492,11 @@ func (gs *GitHubService) CreatePullRequest(title, body string) (string, error) {
 		"--title", title,
 		"--body", body)
 	cmd.Dir = gs.workingDir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to create pull request: %s", string(output))
+	}
 
 	output, err := cmd.Output()
 	if err != nil {
