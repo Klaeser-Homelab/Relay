@@ -502,7 +502,6 @@ func (gs *GitHubService) CreatePullRequest(title, body string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create pull request: %w", err)
 	}
-
-	// Return the PR URL
+	
 	return strings.TrimSpace(string(output)), nil
 }

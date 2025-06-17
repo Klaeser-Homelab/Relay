@@ -86,3 +86,94 @@ func ExtractPlanFromContext(context string) string {
 	
 	return strings.Join(planLines, "\n")
 }
+
+// GitAdd stages all changes in the working directory
+func GitAdd(workingDir string) error {
+	cmd := exec.Command("git", "add", ".")
+	cmd.Dir = workingDir
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to stage changes: %s", string(output))
+	}
+	
+	return nil
+}
+
+// GitCommit commits staged changes with the given message
+func GitCommit(workingDir, message string) error {
+	cmd := exec.Command("git", "commit", "-m", message)
+	cmd.Dir = workingDir
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to commit changes: %s", string(output))
+	}
+	
+	return nil
+}
+
+// GitPush pushes the current branch to origin
+func GitPush(workingDir string) error {
+	cmd := exec.Command("git", "push", "origin", "HEAD")
+	cmd.Dir = workingDir
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to push changes: %s", string(output))
+	}
+	
+	return nil
+}
+
+// GitCheckout switches to the specified branch
+func GitCheckout(workingDir, branchName string) error {
+	cmd := exec.Command("git", "checkout", branchName)
+	cmd.Dir = workingDir
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to checkout branch %s: %s", branchName, string(output))
+	}
+	
+	return nil
+}
+
+// DeleteWorktree removes a git worktree directory
+func DeleteWorktree(mainRepoDir, worktreeDir string) error {
+	cmd := exec.Command("git", "worktree", "remove", "--force", worktreeDir)
+	cmd.Dir = mainRepoDir
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to remove worktree %s: %s", worktreeDir, string(output))
+	}
+	
+	return nil
+}
+
+// DeleteBranch removes a git branch both locally and remotely
+func DeleteBranch(workingDir, branchName string) error {
+	// Delete local branch
+	cmd := exec.Command("git", "branch", "-D", branchName)
+	cmd.Dir = workingDir
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to delete local branch %s: %s", branchName, string(output))
+	}
+	
+	// Delete remote branch if it exists
+	cmd = exec.Command("git", "push", "origin", "--delete", branchName)
+	cmd.Dir = workingDir
+	
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		// Don't fail if remote branch doesn't exist
+		if !strings.Contains(string(output), "remote ref does not exist") {
+			return fmt.Errorf("failed to delete remote branch %s: %s", branchName, string(output))
+		}
+	}
+	
+	return nil
+}

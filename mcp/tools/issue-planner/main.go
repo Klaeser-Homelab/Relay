@@ -62,6 +62,16 @@ type FinishResult struct {
 	PullRequest string `json:"pullRequest,omitempty"`
 }
 
+type CloseParams struct {
+	WorkingDir  string `json:"workingDir,omitempty"`
+	IssueNumber int    `json:"issueNumber,omitempty"`
+}
+
+type CloseResult struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	
@@ -114,14 +124,20 @@ func handleToolsList(request MCPRequest) {
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"content": map[string]interface{}{
-						"type": "array",
-						"items": map[string]interface{}{
-							"type": "object",
-						},
+					"plan": map[string]interface{}{
+						"type":        "string",
+						"description": "The plan content to add to the issue",
+					},
+					"workingDir": map[string]interface{}{
+						"type":        "string",
+						"description": "Working directory (optional, defaults to current directory)",
+					},
+					"issueNumber": map[string]interface{}{
+						"type":        "integer",
+						"description": "Issue number (optional, will be auto-detected from branch if not provided)",
 					},
 				},
-				"required": []string{"content"},
+				"required": []string{"plan"},
 			},
 		},
 		{
@@ -142,6 +158,24 @@ func handleToolsList(request MCPRequest) {
 						"type":        "string",
 						"description": "Body/description for the pull request (optional, auto-generated from context if not provided)",
 					},
+					"workingDir": map[string]interface{}{
+						"type":        "string",
+						"description": "Working directory (optional, defaults to current directory)",
+					},
+					"issueNumber": map[string]interface{}{
+						"type":        "integer",
+						"description": "Issue number (optional, will be auto-detected from branch if not provided)",
+					},
+				},
+				"required": []string{},
+			},
+		},
+		{
+			Name:        "close",
+			Description: "Abandons and cleans up the feature by removing the worktree directory and the corresponding feature branch",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
 					"workingDir": map[string]interface{}{
 						"type":        "string",
 						"description": "Working directory (optional, defaults to current directory)",
@@ -181,6 +215,8 @@ func handleToolsCall(request MCPRequest) {
 		handleUpdateIssuePlan(request, paramsMap)
 	case "finish":
 		handleFinish(request, paramsMap)
+	case "close":
+		handleClose(request, paramsMap)
 	default:
 		sendError(request.ID, -32601, "Tool not found")
 	}
@@ -304,6 +340,44 @@ func handleFinish(request MCPRequest, paramsMap map[string]interface{}) {
 	
 	// Execute the tool
 	result, err := finish(params)
+	if err != nil {
+		sendError(request.ID, -32603, err.Error())
+		return
+	}
+	
+	sendResponse(request.ID, result)
+}
+
+func handleClose(request MCPRequest, paramsMap map[string]interface{}) {
+	// Parse arguments
+	argsMap, ok := paramsMap["arguments"].(map[string]interface{})
+	if !ok {
+		sendError(request.ID, -32602, "Invalid arguments")
+		return
+	}
+	
+	var params CloseParams
+	
+	// Extract issue number (optional)
+	if issueNum, ok := argsMap["issueNumber"].(float64); ok {
+		params.IssueNumber = int(issueNum)
+	}
+	
+	// Extract working directory (optional)
+	if workingDir, ok := argsMap["workingDir"].(string); ok {
+		params.WorkingDir = workingDir
+	} else {
+		// Default to current directory
+		var err error
+		params.WorkingDir, err = os.Getwd()
+		if err != nil {
+			sendError(request.ID, -32603, fmt.Sprintf("Failed to get working directory: %v", err))
+			return
+		}
+	}
+	
+	// Execute the tool
+	result, err := closeFeature(params)
 	if err != nil {
 		sendError(request.ID, -32603, err.Error())
 		return
@@ -634,6 +708,91 @@ func finish(params FinishParams) (*FinishResult, error) {
 		Success:     true,
 		Message:     fmt.Sprintf("Successfully staged, committed, pushed changes and created pull request for issue #%d", issueNumber),
 		PullRequest: prURL,
+	}, nil
+}
+
+func closeFeature(params CloseParams) (*CloseResult, error) {
+	// Determine issue number if not provided
+	issueNumber := params.IssueNumber
+	if issueNumber == 0 {
+		branchName, err := shared.GetCurrentBranch(params.WorkingDir)
+		if err != nil {
+			return &CloseResult{
+				Success: false,
+				Message: fmt.Sprintf("Failed to get current branch: %v", err),
+			}, nil
+		}
+		
+		issueNumber, err = shared.ExtractIssueNumberFromBranch(branchName)
+		if err != nil {
+			return &CloseResult{
+				Success: false,
+				Message: fmt.Sprintf("Failed to extract issue number from branch '%s': %v", branchName, err),
+			}, nil
+		}
+	}
+	
+	// Get current branch name for deletion
+	branchName, err := shared.GetCurrentBranch(params.WorkingDir)
+	if err != nil {
+		return &CloseResult{
+			Success: false,
+			Message: fmt.Sprintf("Failed to get current branch: %v", err),
+		}, nil
+	}
+	
+	// Don't allow closing main branch
+	if branchName == "main" || branchName == "master" {
+		return &CloseResult{
+			Success: false,
+			Message: "Cannot close main/master branch",
+		}, nil
+	}
+	
+	// Switch to main branch first (assuming main repo is parent of worktree)
+	mainRepoDir := strings.TrimSuffix(params.WorkingDir, fmt.Sprintf("/issue-%d", issueNumber))
+	if mainRepoDir == params.WorkingDir {
+		// If we're not in a worktree, just switch to main
+		if err := shared.GitCheckout(params.WorkingDir, "main"); err != nil {
+			return &CloseResult{
+				Success: false,
+				Message: fmt.Sprintf("Failed to switch to main branch: %v", err),
+			}, nil
+		}
+		
+		// Delete the feature branch
+		if err := shared.DeleteBranch(params.WorkingDir, branchName); err != nil {
+			return &CloseResult{
+				Success: false,
+				Message: fmt.Sprintf("Failed to delete branch %s: %v", branchName, err),
+			}, nil
+		}
+		
+		return &CloseResult{
+			Success: true,
+			Message: fmt.Sprintf("Successfully abandoned feature and deleted branch %s for issue #%d", branchName, issueNumber),
+		}, nil
+	}
+	
+	// We're in a worktree, delete it and the branch
+	if err := shared.DeleteWorktree(mainRepoDir, params.WorkingDir); err != nil {
+		return &CloseResult{
+			Success: false,
+			Message: fmt.Sprintf("Failed to delete worktree: %v", err),
+		}, nil
+	}
+	
+	// Delete the feature branch from main repo
+	if err := shared.DeleteBranch(mainRepoDir, branchName); err != nil {
+		return &CloseResult{
+			Success: false,
+			Message: fmt.Sprintf("Failed to delete branch %s: %v", branchName, err),
+		}, nil
+	}
+	
+	return &CloseResult{
+		Success: true,
+		Message: fmt.Sprintf("Successfully abandoned feature, deleted worktree %s and branch %s for issue #%d", params.WorkingDir, branchName, issueNumber),
 	}, nil
 }
 
