@@ -1,1 +1,0 @@
-{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "update_issue_plan", "arguments": {"plan": "## Implementation Plan\n\n1. Create MCP directory structure\n2. Implement issue number extraction\n3. Build GitHub integration\n4. Create MCP server\n5. Test and verify"}}}

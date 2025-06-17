@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  relay-voice:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - NODE_ENV=production
+      - PORT=8080
+    volumes:
+      # Mount projects directory (adjust path as needed)
+      - ${HOME}/Code:/home/relay/projects:ro
+      - ${HOME}/.gitconfig:/home/relay/.gitconfig:ro
+      - ${HOME}/.ssh:/home/relay/.ssh:ro
+      # Mount relay config if it exists
+      - ${HOME}/.relay:/home/relay/.relay
+    restart: unless-stopped
+    networks:
+      - relay-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  relay-network:
+    driver: bridge
