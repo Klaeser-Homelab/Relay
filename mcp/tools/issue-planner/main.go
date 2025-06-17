@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"shared"
@@ -79,22 +78,9 @@ func main() {
 	for scanner.Scan() {
 		line := scanner.Text()
 		
-		// First try to extract ID for error handling, even if parsing fails
-		var requestID interface{}
-		var partialRequest struct {
-			ID interface{} `json:"id"`
-		}
-		json.Unmarshal([]byte(line), &partialRequest)
-		requestID = partialRequest.ID
-		
-		// If ID is nil, use a default value
-		if requestID == nil {
-			requestID = 1
-		}
-		
 		var request MCPRequest
 		if err := json.Unmarshal([]byte(line), &request); err != nil {
-			sendError(requestID, -32700, "Parse error")
+			sendError(request.ID, -32700, "Parse error")
 			continue
 		}
 		
@@ -202,20 +188,6 @@ func handleToolsList(request MCPRequest) {
 				"required": []string{},
 			},
 		},
-		{
-			Name:        "get_recent_issues",
-			Description: "Fetches the 5 most recent issues from GitHub (optionally in a specified working directory)",
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{
-					"workingDir": map[string]interface{}{
-						"type":        "string",
-						"description": "Working directory (optional, defaults to current directory)",
-					},
-				},
-				"required":   []string{},
-			},
-		},
 	}
 	
 	result := map[string]interface{}{
@@ -245,8 +217,6 @@ func handleToolsCall(request MCPRequest) {
 		handleFinish(request, paramsMap)
 	case "close":
 		handleClose(request, paramsMap)
-	case "get_recent_issues":
-		handleGetRecentIssues(request, paramsMap)
 	default:
 		sendError(request.ID, -32601, "Tool not found")
 	}
@@ -413,24 +383,6 @@ func handleClose(request MCPRequest, paramsMap map[string]interface{}) {
 		return
 	}
 	
-	sendResponse(request.ID, result)
-}
-
-func handleGetRecentIssues(request MCPRequest, paramsMap map[string]interface{}) {
-	workingDir := ""
-	if argsMap, ok := paramsMap["arguments"].(map[string]interface{}); ok {
-		if wd, ok := argsMap["workingDir"].(string); ok {
-			workingDir = wd
-		}
-	}
-	issues, err := getRecentIssues(workingDir)
-	if err != nil {
-		sendError(request.ID, -32603, err.Error())
-		return
-	}
-	result := map[string]interface{}{
-		"issues": issues,
-	}
 	sendResponse(request.ID, result)
 }
 
@@ -797,89 +749,54 @@ func closeFeature(params CloseParams) (*CloseResult, error) {
 		}, nil
 	}
 	
-	// Determine if we're in a worktree by checking the directory structure
-	// If the directory ends with "-issue-{number}", we're likely in a worktree
-	isWorktree := strings.Contains(params.WorkingDir, fmt.Sprintf("-issue-%d", issueNumber))
-	
-	if isWorktree {
-		// We're in a worktree - extract main repo directory
-		mainRepoDir := strings.TrimSuffix(params.WorkingDir, fmt.Sprintf("-issue-%d", issueNumber))
-		
-		// Verify the main repo directory exists
-		if _, err := os.Stat(mainRepoDir); os.IsNotExist(err) {
+	// Switch to main branch first (assuming main repo is parent of worktree)
+	mainRepoDir := strings.TrimSuffix(params.WorkingDir, fmt.Sprintf("/issue-%d", issueNumber))
+	if mainRepoDir == params.WorkingDir {
+		// If we're not in a worktree, just switch to main
+		if err := shared.GitCheckout(params.WorkingDir, "main"); err != nil {
 			return &CloseResult{
 				Success: false,
-				Message: fmt.Sprintf("Main repository directory not found at: %s", mainRepoDir),
+				Message: fmt.Sprintf("Failed to switch to main branch: %v", err),
 			}, nil
 		}
 		
-		// Delete the worktree (this will automatically switch away from the branch)
-		if err := shared.DeleteWorktree(mainRepoDir, params.WorkingDir); err != nil {
+		// Delete the feature branch
+		if err := shared.DeleteBranch(params.WorkingDir, branchName); err != nil {
 			return &CloseResult{
 				Success: false,
-				Message: fmt.Sprintf("Failed to delete worktree: %v", err),
+				Message: fmt.Sprintf("Failed to delete branch %s: %v", branchName, err),
 			}, nil
-		}
-		
-		// Delete the feature branch from main repo
-		if err := shared.DeleteBranch(mainRepoDir, branchName); err != nil {
-			// Don't fail completely if branch deletion fails - the worktree is already gone
-			fmt.Fprintf(os.Stderr, "Warning: Failed to delete branch %s: %v\n", branchName, err)
 		}
 		
 		return &CloseResult{
 			Success: true,
-			Message: fmt.Sprintf("Successfully abandoned feature, deleted worktree %s and branch %s for issue #%d", params.WorkingDir, branchName, issueNumber),
+			Message: fmt.Sprintf("Successfully abandoned feature and deleted branch %s for issue #%d", branchName, issueNumber),
 		}, nil
-		
-	} else {
-		// We're in the main repo, not a worktree - nothing to close
+	}
+	
+	// We're in a worktree, delete it and the branch
+	if err := shared.DeleteWorktree(mainRepoDir, params.WorkingDir); err != nil {
 		return &CloseResult{
 			Success: false,
-			Message: "Not in a worktree, nothing to close",
+			Message: fmt.Sprintf("Failed to delete worktree: %v", err),
 		}, nil
 	}
-}
-
-// getRecentIssues fetches the 5 most recent issues from GitHub using the GitHub CLI, optionally in a specified directory
-func getRecentIssues(workingDir string) ([]map[string]interface{}, error) {
-	cmd := "gh issue list --limit 5 --state all --json number,title,url"
-	output, err := runShellCommandWithDir(cmd, workingDir)
-	if err != nil {
-		return nil, err
+	
+	// Delete the feature branch from main repo
+	if err := shared.DeleteBranch(mainRepoDir, branchName); err != nil {
+		return &CloseResult{
+			Success: false,
+			Message: fmt.Sprintf("Failed to delete branch %s: %v", branchName, err),
+		}, nil
 	}
-	var issues []map[string]interface{}
-	if err := json.Unmarshal([]byte(output), &issues); err != nil {
-		return nil, err
-	}
-	return issues, nil
-}
-
-// runShellCommandWithDir runs a shell command in the specified directory (or current if empty)
-func runShellCommandWithDir(cmd string, dir string) (string, error) {
-	parts := strings.Fields(cmd)
-	if len(parts) == 0 {
-		return "", fmt.Errorf("empty command")
-	}
-	c := parts[0]
-	args := parts[1:]
-	command := exec.Command(c, args...)
-	if dir != "" {
-		command.Dir = dir
-	}
-	out, err := command.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("command failed: %v, output: %s", err, string(out))
-	}
-	return string(out), nil
+	
+	return &CloseResult{
+		Success: true,
+		Message: fmt.Sprintf("Successfully abandoned feature, deleted worktree %s and branch %s for issue #%d", params.WorkingDir, branchName, issueNumber),
+	}, nil
 }
 
 func sendResponse(id interface{}, result interface{}) {
-	// Ensure ID is never nil
-	if id == nil {
-		id = 1
-	}
-	
 	response := MCPResponse{
 		JSONRPC: "2.0",
 		ID:      id,
@@ -891,11 +808,6 @@ func sendResponse(id interface{}, result interface{}) {
 }
 
 func sendError(id interface{}, code int, message string) {
-	// Ensure ID is never nil
-	if id == nil {
-		id = 1
-	}
-	
 	response := MCPResponse{
 		JSONRPC: "2.0",
 		ID:      id,

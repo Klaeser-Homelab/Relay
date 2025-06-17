@@ -30,13 +30,6 @@ type GitHubService struct {
 	repository string
 }
 
-// FileChange represents a file change in git
-type FileChange struct {
-	Status   string // A=added, M=modified, D=deleted, R=renamed
-	FilePath string
-	NewPath  string // for renamed files
-}
-
 // NewGitHubService creates a new GitHub service
 func NewGitHubService(workingDir string) (*GitHubService, error) {
 	service := &GitHubService{
@@ -125,22 +118,6 @@ func (gs *GitHubService) UpdateIssueBody(number int, newBody string) error {
 	return nil
 }
 
-// CreatePullRequest creates a pull request using gh CLI
-func (gs *GitHubService) CreatePullRequest(title, body string) (string, error) {
-	cmd := exec.Command("gh", "pr", "create",
-		"--repo", gs.repository,
-		"--title", title,
-		"--body", body)
-	cmd.Dir = gs.workingDir
-
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to create pull request: %w", err)
-	}
-	
-	return strings.TrimSpace(string(output)), nil
-}
-
 // parseGitHubIssue converts raw JSON data to GitHubIssue struct
 func (gs *GitHubService) parseGitHubIssue(raw map[string]interface{}) (GitHubIssue, error) {
 	issue := GitHubIssue{}
@@ -205,6 +182,43 @@ func (gs *GitHubService) parseGitHubIssue(raw map[string]interface{}) (GitHubIss
 
 	return issue, nil
 }
+
+// GitAdd stages all changes in the git repository
+func GitAdd(workingDir string) error {
+	// First find the git repository root
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = workingDir
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to find git root: %v", err)
+	}
+	
+	gitRoot := strings.TrimSpace(string(output))
+	
+	// Stage all changes from git root
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = gitRoot
+	
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to stage changes: %s", string(output))
+	}
+	
+	return nil
+}
+
+// GitCommit creates a commit with the given message
+func GitCommit(workingDir, message string) error {
+	cmd := exec.Command("git", "commit", "-m", message)
+	cmd.Dir = workingDir
+	
+// FileChange represents a file change in git
+type FileChange struct {
+	Status   string // A=added, M=modified, D=deleted, R=renamed
+	FilePath string
+	NewPath  string // for renamed files
+}
+
 
 // GetCommitFileChanges gets the list of changed files between main and current branch
 func GetCommitFileChanges(workingDir, baseBranch string) ([]FileChange, error) {
@@ -424,21 +438,10 @@ func categorizeFile(filePath string) string {
 
 // GitAdd stages all changes for commit
 func GitAdd(workingDir string) error {
-	// First find the git repository root
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd := exec.Command("git", "add", ".")
 	cmd.Dir = workingDir
-	output, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to find git root: %v", err)
-	}
-	
-	gitRoot := strings.TrimSpace(string(output))
-	
-	// Stage all changes from git root
-	cmd = exec.Command("git", "add", ".")
-	cmd.Dir = gitRoot
 
-	output, err = cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to stage changes: %s", string(output))
 	}
@@ -451,10 +454,12 @@ func GitCommit(workingDir, message string) error {
 	cmd := exec.Command("git", "commit", "-m", message)
 	cmd.Dir = workingDir
 
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to commit changes: %s", string(output))
 	}
+
 	
 	return nil
 }
@@ -464,10 +469,39 @@ func GitPush(workingDir string) error {
 	cmd := exec.Command("git", "push", "origin", "HEAD")
 	cmd.Dir = workingDir
 
+	return nil
+}
+
+// GitPush pushes changes to remote repository
+func GitPush(workingDir string) error {
+	cmd := exec.Command("git", "push")
+	cmd.Dir = workingDir
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to push changes: %s", string(output))
 	}
 
 	return nil
+}
+
+// CreatePullRequest creates a pull request using gh CLI
+func (gs *GitHubService) CreatePullRequest(title, body string) (string, error) {
+	cmd := exec.Command("gh", "pr", "create",
+		"--repo", gs.repository,
+		"--title", title,
+		"--body", body)
+	cmd.Dir = gs.workingDir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to create pull request: %s", string(output))
+	}
+
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to create pull request: %w", err)
+	}
+	
+	return strings.TrimSpace(string(output)), nil
 }
