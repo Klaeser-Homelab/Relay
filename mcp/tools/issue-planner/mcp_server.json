@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "issue-planner": {
-      "command": "go",
-      "args": ["run", "main.go"],
-      "cwd": "./mcp/tools/issue-planner"
-    }
-  }
-}
