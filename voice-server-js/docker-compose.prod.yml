@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  relay-voice-server:
+    image: relay-voice-server:latest
+    container_name: relay-voice-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    volumes:
+      # Mount projects directory for development access
+      - /home/user/projects:/home/relay/projects:ro
+      - /home/user/.gitconfig:/home/relay/.gitconfig:ro
+      - /home/user/.ssh:/home/relay/.ssh:ro
+      # Mount relay config if it exists
+      - /home/user/.relay:/home/relay/.relay
+    networks:
+      - relay-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  relay-network:
+    driver: bridge
