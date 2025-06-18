@@ -22,7 +22,7 @@ services:
       NODE_ENV: production
       PORT: 8080
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GH_TOKEN: ${GH_TOKEN}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
     volumes:
       # Mount projects directory for development access

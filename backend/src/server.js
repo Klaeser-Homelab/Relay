@@ -22,7 +22,7 @@ function obscure(key) {
 }
 console.log(`OPENAI_API_KEY: ${obscure(process.env.OPENAI_API_KEY)}`);
 console.log(`GEMINI_API_KEY: ${obscure(process.env.GEMINI_API_KEY)}`);
-console.log(`GITHUB_TOKEN: ${obscure(process.env.GITHUB_TOKEN)}`);
+console.log(`GH_TOKEN: ${obscure(process.env.GH_TOKEN)}`);
 
 class VoiceServer {
   constructor() {

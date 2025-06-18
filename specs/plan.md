@@ -262,7 +262,7 @@ services:
   repo-manager:
     build: ./repo-manager
     environment:
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GH_TOKEN=${GH_TOKEN}
       - REDIS_URL=redis://redis:6379
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
     volumes:

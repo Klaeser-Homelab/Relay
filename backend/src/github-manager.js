@@ -3,11 +3,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export class GitHubManager {
   constructor() {
-    this.githubToken = process.env.GITHUB_TOKEN;
+    this.githubToken = process.env.GH_TOKEN;
     this.geminiApiKey = process.env.GEMINI_API_KEY;
     
     if (!this.githubToken) {
-      console.warn('GITHUB_TOKEN not provided. GitHub functionality will be limited.');
+      console.warn('GH_TOKEN not provided. GitHub functionality will be limited.');
     }
     
     if (!this.geminiApiKey) {
@@ -188,7 +188,7 @@ export class GitHubManager {
     if (!this.githubToken) {
       return {
         success: false,
-        message: 'GitHub token not configured. Set GITHUB_TOKEN environment variable.'
+        message: 'GitHub token not configured. Set GH_TOKEN environment variable.'
       };
     }
 

@@ -41,7 +41,7 @@ Edit `.env` file:
 OPENAI_API_KEY=sk-your-actual-openai-api-key-here
 
 # Optional but recommended
-GITHUB_TOKEN=ghp_your-github-personal-access-token
+GH_TOKEN=ghp_your-github-personal-access-token
 PORT=8080
 NODE_ENV=development
 LOG_LEVEL=info

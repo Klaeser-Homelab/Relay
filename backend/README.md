@@ -43,7 +43,7 @@ OPENAI_API_KEY=your-openai-api-key-here
 
 Optional:
 ```env
-GITHUB_TOKEN=your-github-token-here
+GH_TOKEN=your-github-token-here
 PORT=8080
 NODE_ENV=development
 ```
@@ -151,7 +151,7 @@ docker run -p 8080:8080 \
 ```bash
 # Set environment variables
 export OPENAI_API_KEY=your-key-here
-export GITHUB_TOKEN=your-token-here
+export GH_TOKEN=your-token-here
 
 # Start services
 docker-compose up -d

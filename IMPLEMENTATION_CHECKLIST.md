@@ -649,8 +649,8 @@ if [ -n "$GIT_USER_EMAIL" ]; then
 fi
 
 # Setup GitHub CLI if token is provided
-if [ -n "$GITHUB_TOKEN" ]; then
-    echo "$GITHUB_TOKEN" | gh auth login --with-token
+if [ -n "$GH_TOKEN" ]; then
+    echo "$GH_TOKEN" | gh auth login --with-token
 fi
 
 # Setup Claude Code if API key is provided
@@ -711,7 +711,7 @@ docker build -t relay-dev-env:latest .
 
 # Test the container
 docker run --rm -it \
-    -e GITHUB_TOKEN=$GITHUB_TOKEN \
+    -e GH_TOKEN=$GH_TOKEN \
     -e CLAUDE_API_KEY=$CLAUDE_API_KEY \
     -e GIT_USER_NAME="Your Name" \
     -e GIT_USER_EMAIL="your@email.com" \
@@ -897,7 +897,7 @@ CMD ["./repo-manager"]
     container_name: relay-repo-manager
     restart: unless-stopped
     environment:
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GH_TOKEN=${GH_TOKEN}
       - REDIS_URL=redis://redis:6379
       - WORKSPACE_DIR=/workspace
     volumes:
@@ -935,7 +935,7 @@ CMD ["./repo-manager"]
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CLAUDE_API_KEY=${CLAUDE_API_KEY}  
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GH_TOKEN=${GH_TOKEN}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
@@ -1282,7 +1282,7 @@ openssl x509 -req -days 365 -sha256 -in /opt/relay/config/ssl/server.csr \
 # API Keys
 OPENAI_API_KEY=sk-your-openai-api-key
 CLAUDE_API_KEY=your-claude-api-key
-GITHUB_TOKEN=ghp_your-github-token
+GH_TOKEN=ghp_your-github-token
 GEMINI_API_KEY=your-gemini-api-key
 
 # Database passwords
