@@ -16,6 +16,8 @@ jobs:
       DOCKER_COMPOSE_FILE: docker-compose.prod.yml
       VOICE_SERVER_IMAGE: relay-voice-server:latest
       DOCKER_CONTEXT_NAME: relay-ctx
+      FRONTEND_IMAGE: relay-frontend:latest
+      BACKEND_IMAGE: relay-backend:latest
 
       # Backend Secrets
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
