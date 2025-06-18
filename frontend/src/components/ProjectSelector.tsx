@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Search, Star, GitFork, Lock, Globe, Calendar } from 'lucide-react';
 import type { GitHubRepository } from '../types/api';
 
@@ -34,9 +34,6 @@ export function ProjectSelector({
 
   const languages = Array.from(new Set(projects.map(p => p.language).filter(Boolean))) as string[];
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString();
-  };
 
   if (error) {
     return (

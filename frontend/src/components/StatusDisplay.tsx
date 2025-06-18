@@ -1,4 +1,3 @@
-import React from 'react';
 import { Wifi, WifiOff, Mic, MicOff, Loader } from 'lucide-react';
 import type { VoiceSessionStatus } from '../types/api';
 

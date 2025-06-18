@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Mic, MicOff, Square, Play, Volume2, VolumeX } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Mic, Square } from 'lucide-react';
 import type { GitHubRepository } from '../types/api';
 
 interface VoiceChatProps {

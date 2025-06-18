@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { MessageSquare, Trash2 } from 'lucide-react';
 import type { TranscriptionData } from '../types/api';
 

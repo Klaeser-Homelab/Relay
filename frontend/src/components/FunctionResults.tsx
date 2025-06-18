@@ -1,4 +1,3 @@
-import React from 'react';
 import { Terminal, ExternalLink, Trash2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import type { FunctionResultData } from '../types/api';
 

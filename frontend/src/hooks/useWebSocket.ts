@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { WebSocketMessage, VoiceSessionStatus, TranscriptionData, AudioResponseData, FunctionResultData, GeminiAdviceData } from '../types/api';
+import type { VoiceSessionStatus, TranscriptionData, AudioResponseData, FunctionResultData, GeminiAdviceData } from '../types/api';
 
 export interface WebSocketState {
   socket: Socket | null;
