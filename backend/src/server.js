@@ -5,6 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import * as pty from 'node-pty';
 
 import { VoiceSession } from './voice-session.js';
 import { GitHubManager } from './github-manager.js';
@@ -39,6 +40,7 @@ class VoiceServer {
     this.openaiAPIKey = process.env.OPENAI_API_KEY;
     this.port = process.env.PORT || 8080;
     this.sessions = new Map();
+    this.terminalSessions = new Map();
     
     if (!this.openaiAPIKey) {
       throw new Error('OPENAI_API_KEY environment variable is required');
@@ -189,26 +191,108 @@ class VoiceServer {
   setupWebSocket() {
     this.io.on('connection', (socket) => {
       const sessionId = this.generateSessionId();
-      console.log(`New voice connection: ${sessionId}`);
+      console.log(`New connection: ${sessionId}`);
 
       socket.on('disconnect', () => {
-        console.log(`Voice session ended: ${sessionId}`);
+        console.log(`Session ended: ${sessionId}`);
         if (this.sessions.has(sessionId)) {
           this.sessions.get(sessionId).close();
           this.sessions.delete(sessionId);
         }
+        if (this.terminalSessions.has(sessionId)) {
+          const terminalSession = this.terminalSessions.get(sessionId);
+          if (terminalSession.ptyProcess) {
+            terminalSession.ptyProcess.kill();
+          }
+          this.terminalSessions.delete(sessionId);
+        }
       });
 
-      const session = new VoiceSession(
-        sessionId,
-        socket,
-        this.openaiAPIKey,
-        this.githubManager
-      );
+      // Handle voice session initialization
+      socket.on('voice_session', () => {
+        const session = new VoiceSession(
+          sessionId,
+          socket,
+          this.openaiAPIKey,
+          this.githubManager
+        );
+        this.sessions.set(sessionId, session);
+        session.start();
+      });
 
-      this.sessions.set(sessionId, session);
-      session.start();
+      // Handle terminal session initialization
+      socket.on('terminal_init', (data) => {
+        this.handleTerminalInit(socket, sessionId, data);
+      });
+
+      // Handle terminal commands
+      socket.on('terminal_command', (data) => {
+        this.handleTerminalCommand(socket, sessionId, data);
+      });
+
+      // Handle terminal resize
+      socket.on('terminal_resize', (data) => {
+        this.handleTerminalResize(sessionId, data);
+      });
     });
+  }
+
+  handleTerminalInit(socket, sessionId, data) {
+    const { workingDirectory } = data;
+    console.log(`Initializing terminal session: ${sessionId} in ${workingDirectory}`);
+
+    // Create PTY process
+    const ptyProcess = pty.spawn('/bin/bash', [], {
+      name: 'xterm-256color',
+      cols: 80,
+      rows: 24,
+      cwd: workingDirectory || process.cwd(),
+      env: { 
+        ...process.env,
+        TERM: 'xterm-256color'
+      }
+    });
+
+    const terminalSession = {
+      ptyProcess,
+      workingDirectory: workingDirectory || process.cwd()
+    };
+
+    this.terminalSessions.set(sessionId, terminalSession);
+
+    // Handle PTY output
+    ptyProcess.onData((data) => {
+      socket.emit('terminal_output', { data });
+    });
+
+    ptyProcess.onExit((exitCode, signal) => {
+      console.log(`Terminal session ${sessionId} exited with code ${exitCode}, signal ${signal}`);
+      socket.emit('terminal_closed', { code: exitCode, signal });
+      this.terminalSessions.delete(sessionId);
+    });
+
+    socket.emit('terminal_ready', { sessionId });
+  }
+
+  handleTerminalCommand(socket, sessionId, data) {
+    const terminalSession = this.terminalSessions.get(sessionId);
+    if (!terminalSession || !terminalSession.ptyProcess) {
+      socket.emit('terminal_error', { message: 'Terminal session not found' });
+      return;
+    }
+
+    const { command } = data;
+    terminalSession.ptyProcess.write(command);
+  }
+
+  handleTerminalResize(sessionId, data) {
+    const terminalSession = this.terminalSessions.get(sessionId);
+    if (!terminalSession || !terminalSession.ptyProcess) {
+      return;
+    }
+
+    const { cols, rows } = data;
+    terminalSession.ptyProcess.resize(cols, rows);
   }
 
   generateSessionId() {

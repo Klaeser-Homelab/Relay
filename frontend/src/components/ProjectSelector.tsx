@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Search, Star, GitFork, Lock, Globe, Calendar, Download, CheckCircle, Loader, HardDrive } from 'lucide-react';
-import type { GitHubRepository, RepositoryCloneResult } from '../types/api';
+import { Search, Star, GitFork, Lock, Globe, Calendar, Download, Loader, HardDrive, Terminal as TerminalIcon } from 'lucide-react';
+import type { GitHubRepository } from '../types/api';
+import { Terminal } from './Terminal';
 
 interface ProjectSelectorProps {
   projects: GitHubRepository[];
@@ -23,6 +24,7 @@ export function ProjectSelector({
 }: ProjectSelectorProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterLanguage, setFilterLanguage] = useState('');
+  const [terminalProject, setTerminalProject] = useState<GitHubRepository | null>(null);
 
   const filteredProjects = projects.filter(project => {
     const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -127,6 +129,7 @@ export function ProjectSelector({
                 isSelected={selectedProject?.fullName === project.fullName}
                 onSelect={() => onSelectProject(project)}
                 onClone={onCloneRepository ? () => onCloneRepository(project) : undefined}
+                onOpenTerminal={() => setTerminalProject(project)}
               />
             ))}
           </div>
@@ -138,6 +141,15 @@ export function ProjectSelector({
           </div>
         )}
       </div>
+
+      {/* Terminal Modal */}
+      {terminalProject && (
+        <Terminal
+          repoPath={terminalProject.fullName}
+          localPath={terminalProject.localPath || `/Users/reed/Code/${terminalProject.name}`}
+          onClose={() => setTerminalProject(null)}
+        />
+      )}
     </div>
   );
 }
@@ -147,9 +159,10 @@ interface ProjectCardProps {
   isSelected: boolean;
   onSelect: () => void;
   onClone?: () => void;
+  onOpenTerminal: () => void;
 }
 
-function ProjectCard({ project, isSelected, onSelect, onClone }: ProjectCardProps) {
+function ProjectCard({ project, isSelected, onSelect, onClone, onOpenTerminal }: ProjectCardProps) {
   const [isCloning, setIsCloning] = useState(false);
 
   const handleClone = async (e: React.MouseEvent) => {
@@ -162,6 +175,11 @@ function ProjectCard({ project, isSelected, onSelect, onClone }: ProjectCardProp
     } finally {
       setIsCloning(false);
     }
+  };
+
+  const handleOpenTerminal = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent selecting the project
+    onOpenTerminal();
   };
   return (
     <div 
@@ -193,10 +211,20 @@ function ProjectCard({ project, isSelected, onSelect, onClone }: ProjectCardProp
         {/* Clone status and button */}
         <div className="flex items-center space-x-2">
           {project.isCloned ? (
-            <div className="flex items-center text-green-600 text-xs">
-              <HardDrive className="w-3 h-3 mr-1" />
-              Local
-            </div>
+            <>
+              <div className="flex items-center text-green-600 text-xs">
+                <HardDrive className="w-3 h-3 mr-1" />
+                Local
+              </div>
+              <button
+                onClick={handleOpenTerminal}
+                className="flex items-center text-gray-600 hover:text-gray-800 text-xs px-2 py-1 rounded bg-gray-50 hover:bg-gray-100"
+                title="Open terminal at repository location"
+              >
+                <TerminalIcon className="w-3 h-3 mr-1" />
+                Terminal
+              </button>
+            </>
           ) : onClone ? (
             <button
               onClick={handleClone}
