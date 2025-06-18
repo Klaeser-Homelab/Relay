@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import OpenAI from 'openai/index.mjs';
 import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 

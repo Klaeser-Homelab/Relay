@@ -64,7 +64,7 @@ class VoiceServer {
     this.app.get('/health', (req, res) => {
       res.json({
         status: 'healthy',
-        service: 'relay-voice-server-js',
+        service: 'relay-backend',
         timestamp: new Date().toISOString()
       });
     });

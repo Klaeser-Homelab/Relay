@@ -1,5 +1,5 @@
 {
-  "name": "relay-voice-server",
+  "name": "relay-backend",
   "version": "1.0.0",
   "description": "Voice-controlled interface for Relay development tool using OpenAI Agent SDK",
   "main": "src/server.js",
@@ -12,8 +12,8 @@
     "test:client": "node test-client.js",
     "test:quick": "npm run test:endpoints && npm run test:client",
     "build": "echo 'No build step needed for Node.js'",
-    "docker:build": "docker build -t relay-voice-server .",
-    "docker:run": "docker run -p 8080:8080 --env-file .env relay-voice-server"
+    "docker:build": "docker build -t relay-backend .",
+    "docker:run": "docker run -p 8080:8080 --env-file .env relay-backend"
   },
   "keywords": [
     "voice-control",

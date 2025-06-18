@@ -14,7 +14,6 @@ jobs:
     env:
       DOCKER_HOST: tcp://10.0.0.35:2375  # Use remote Docker daemon
       DOCKER_COMPOSE_FILE: docker-compose.prod.yml
-      VOICE_SERVER_IMAGE: relay-voice-server:latest
       DOCKER_CONTEXT_NAME: relay-ctx
       FRONTEND_IMAGE: relay-frontend:latest
       BACKEND_IMAGE: relay-backend:latest
@@ -38,7 +37,7 @@ jobs:
         run: |
           docker build \
             -f Dockerfile.backend \
-            -t ${{ env.VOICE_SERVER_IMAGE }} .
+            -t ${{ env.BACKEND_IMAGE }} .
 
       - name: Set up Docker context
         run: |
