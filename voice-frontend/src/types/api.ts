@@ -54,9 +54,15 @@ export interface FunctionResultData {
   result: any;
 }
 
+export interface GeminiAdviceData {
+  question: string;
+  advice: string;
+  repository: string;
+}
+
 export interface WebSocketMessage {
-  type: 'status' | 'transcription' | 'audio_response' | 'function_result';
-  data: VoiceSessionStatus | TranscriptionData | AudioResponseData | FunctionResultData;
+  type: 'status' | 'transcription' | 'audio_response' | 'function_result' | 'gemini_advice';
+  data: VoiceSessionStatus | TranscriptionData | AudioResponseData | FunctionResultData | GeminiAdviceData;
 }
 
 export interface GitHubIssue {

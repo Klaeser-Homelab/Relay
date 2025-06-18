@@ -564,7 +564,7 @@ ${context ? `Additional Context: ${context}` : ''}
 
 Please provide specific, actionable implementation advice considering the repository's context, technology stack, and recent activity. Include code examples where appropriate.`;
 
-      const model = this.genAI.getGenerativeModel({ model: 'gemini-flash' });
+      const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const advice = response.text();

@@ -4,6 +4,7 @@ import { VoiceChat } from './components/VoiceChat';
 import { StatusDisplay } from './components/StatusDisplay';
 import { TranscriptionView } from './components/TranscriptionView';
 import { FunctionResults } from './components/FunctionResults';
+import { GeminiAdvice } from './components/GeminiAdvice';
 import { DeveloperMode } from './components/DeveloperMode';
 import { useGitHubProjects } from './hooks/useGitHubProjects';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -26,6 +27,7 @@ function App() {
     status,
     transcriptions,
     functionResults,
+    geminiAdvice,
     connect,
     disconnect,
     startRecording,
@@ -34,6 +36,7 @@ function App() {
     selectProject: selectProjectWS,
     clearTranscriptions,
     clearFunctionResults,
+    clearGeminiAdvice,
     socket
   } = useWebSocket();
 
@@ -153,8 +156,8 @@ function App() {
           </div>
         )}
 
-        {/* Bottom Section - Transcriptions and Results */}
-        <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Bottom Section - Transcriptions, Results, and Gemini Advice */}
+        <div className={`mt-8 grid gap-8 ${geminiAdvice.length > 0 ? 'grid-cols-1 xl:grid-cols-3' : 'grid-cols-1 lg:grid-cols-2'}`}>
           {/* Transcriptions */}
           <TranscriptionView
             transcriptions={transcriptions}
@@ -166,6 +169,14 @@ function App() {
             results={functionResults}
             onClear={clearFunctionResults}
           />
+
+          {/* Gemini Advice - Only show if there's advice */}
+          {geminiAdvice.length > 0 && (
+            <GeminiAdvice
+              advice={geminiAdvice}
+              onClear={clearGeminiAdvice}
+            />
+          )}
         </div>
       </main>
 

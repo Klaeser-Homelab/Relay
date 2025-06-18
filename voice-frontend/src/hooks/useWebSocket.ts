@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { WebSocketMessage, VoiceSessionStatus, TranscriptionData, AudioResponseData, FunctionResultData } from '../types/api';
+import type { WebSocketMessage, VoiceSessionStatus, TranscriptionData, AudioResponseData, FunctionResultData, GeminiAdviceData } from '../types/api';
 
 export interface WebSocketState {
   socket: Socket | null;
@@ -8,6 +8,7 @@ export interface WebSocketState {
   status: VoiceSessionStatus | null;
   transcriptions: TranscriptionData[];
   functionResults: FunctionResultData[];
+  geminiAdvice: GeminiAdviceData[];
 }
 
 export function useWebSocket() {
@@ -16,7 +17,8 @@ export function useWebSocket() {
     connected: false,
     status: null,
     transcriptions: [],
-    functionResults: []
+    functionResults: [],
+    geminiAdvice: []
   });
 
   const socketRef = useRef<Socket | null>(null);
@@ -72,6 +74,18 @@ export function useWebSocket() {
       });
     });
 
+    socket.on('gemini_advice', (data: GeminiAdviceData) => {
+      console.log('Gemini advice received in frontend:', data);
+      setState(prev => {
+        const newAdvice = [...prev.geminiAdvice, data];
+        console.log('Updated Gemini advice:', newAdvice);
+        return {
+          ...prev,
+          geminiAdvice: newAdvice
+        };
+      });
+    });
+
     socket.on('connect_error', (error) => {
       console.error('WebSocket connection error:', error);
     });
@@ -119,6 +133,10 @@ export function useWebSocket() {
     setState(prev => ({ ...prev, functionResults: [] }));
   }, []);
 
+  const clearGeminiAdvice = useCallback(() => {
+    setState(prev => ({ ...prev, geminiAdvice: [] }));
+  }, []);
+
   useEffect(() => {
     return () => {
       disconnect();
@@ -135,6 +153,7 @@ export function useWebSocket() {
     selectProject,
     clearTranscriptions,
     clearFunctionResults,
+    clearGeminiAdvice,
     socket: socketRef.current
   };
 }

@@ -16,6 +16,7 @@ export class VoiceSession {
     this.openaiWs = null;
     this.openaiClient = new OpenAI({ apiKey: openaiAPIKey });
     this.closed = false;
+    this.processedCallIds = new Set(); // Track processed function calls to prevent duplicates
     
     this.setupSocketHandlers();
   }
@@ -270,17 +271,17 @@ export class VoiceSession {
       {
         type: 'function',
         name: 'get_implementation_advice',
-        description: 'Get implementation advice and guidance from Gemini Flash AI for development questions',
+        description: 'CALL THIS FUNCTION when user asks implementation questions starting with: "How should I", "How do I", "How can I", "What\'s the best way to", "I need help implementing", "How to implement", "Help me implement", or any variation asking for implementation guidance. This function gets expert advice from Gemini Flash AI for development questions and coding challenges.',
         parameters: {
           type: 'object',
           properties: {
             question: {
               type: 'string',
-              description: 'The implementation question or challenge you need help with'
+              description: 'The exact implementation question the user asked, including any typos or informal language'
             },
             context: {
               type: 'string',
-              description: 'Additional context about your specific use case or requirements'
+              description: 'Additional context about their specific technology stack, requirements, or constraints'
             }
           },
           required: ['question']
@@ -485,6 +486,13 @@ export class VoiceSession {
     const functionName = message.name;
     const args = JSON.parse(message.arguments || '{}');
 
+    // Prevent duplicate function calls
+    if (this.processedCallIds.has(callId)) {
+      console.log(`Skipping duplicate function call: ${callId}`);
+      return;
+    }
+    this.processedCallIds.add(callId);
+
     const functionType = functionName === 'get_implementation_advice' ? 'Gemini' : 'GitHub';
     console.log(`Executing ${functionType} function: ${functionName} with args:`, args);
     this.sendStatusMessage('executing', `Executing ${functionType}: ${functionName}`, this.currentProject);
@@ -499,39 +507,69 @@ export class VoiceSession {
       if (result.success) {
         this.sendStatusMessage('completed', `Completed: ${functionName}`, this.currentProject);
         
-        const functionResultData = {
-          function: functionName,
-          result: result.data || result.message
-        };
-        
-        console.log('Sending function result to frontend:', functionResultData);
-        
-        this.sendMessage({
-          type: 'function_result',
-          data: functionResultData
-        });
-        
-        // Send function result back to OpenAI
-        const functionResult = {
-          type: 'conversation.item.create',
-          item: {
-            type: 'function_call_output',
-            call_id: callId,
-            output: JSON.stringify(result.data || result.message)
-          }
-        };
-        
-        if (this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN) {
-          this.openaiWs.send(JSON.stringify(functionResult));
+        // Handle Gemini functions differently - bypass OpenAI entirely
+        if (functionName === 'get_implementation_advice') {
+          console.log('Sending Gemini advice directly to frontend (bypassing OpenAI)');
           
-          // Request response after function result
-          const responseMessage = {
-            type: 'response.create',
-            response: {
-              modalities: ['text', 'audio']
+          this.sendMessage({
+            type: 'gemini_advice',
+            data: {
+              question: result.data?.question || 'Implementation question',
+              advice: result.data?.advice || result.message,
+              repository: result.data?.repository || this.currentProject
+            }
+          });
+          
+          // Send a simple confirmation to OpenAI without requesting a response
+          const functionResult = {
+            type: 'conversation.item.create',
+            item: {
+              type: 'function_call_output',
+              call_id: callId,
+              output: JSON.stringify({ status: 'completed', message: 'Implementation advice provided' })
             }
           };
-          this.openaiWs.send(JSON.stringify(responseMessage));
+          
+          if (this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN) {
+            this.openaiWs.send(JSON.stringify(functionResult));
+            // Deliberately NOT sending response.create to prevent OpenAI commentary
+          }
+        } else {
+          // Normal GitHub function handling - keep OpenAI in the loop
+          const functionResultData = {
+            function: functionName,
+            result: result.data || result.message
+          };
+          
+          console.log('Sending function result to frontend:', functionResultData);
+          
+          this.sendMessage({
+            type: 'function_result',
+            data: functionResultData
+          });
+          
+          // Send function result back to OpenAI and request response
+          const functionResult = {
+            type: 'conversation.item.create',
+            item: {
+              type: 'function_call_output',
+              call_id: callId,
+              output: JSON.stringify(result.data || result.message)
+            }
+          };
+          
+          if (this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN) {
+            this.openaiWs.send(JSON.stringify(functionResult));
+            
+            // Request response after function result
+            const responseMessage = {
+              type: 'response.create',
+              response: {
+                modalities: ['text', 'audio']
+              }
+            };
+            this.openaiWs.send(JSON.stringify(responseMessage));
+          }
         }
       } else {
         this.sendStatusMessage('error', `Failed: ${result.message}`, this.currentProject);
@@ -602,7 +640,15 @@ Repository: ${status.fullName}
 URL: ${status.url}
 Available commands: create_github_issue, update_github_issue, close_github_issue, list_issues, get_repository_info, list_commits, create_pull_request, list_pull_requests, get_implementation_advice
 
+FUNCTION PRIORITY RULES:
+1. ALWAYS use get_implementation_advice for ANY question asking HOW to implement, build, or do something
+2. Only use create_github_issue when user explicitly wants to CREATE an issue, not when asking for implementation help
+3. Implementation questions should NEVER create issues - they should get advice first
+
+IMPORTANT: When get_implementation_advice returns results, you must ONLY present the Gemini advice exactly as provided. DO NOT add your own analysis, explanations, or additional recommendations. Act as a presenter of Gemini's response, not as a competing AI assistant. Simply relay the implementation advice that Gemini provided.
+
 When the user gives voice commands, convert them to appropriate function calls.
+
 Examples:
 - "Create an issue for adding user authentication" -> create_github_issue
 - "Update issue 5 to mark it as completed" -> update_github_issue  
@@ -611,8 +657,22 @@ Examples:
 - "Get repository information" -> get_repository_info
 - "List recent commits" -> list_commits
 - "Create a pull request from feature branch to main" -> create_pull_request
+
+IMPLEMENTATION ADVICE EXAMPLES (ALWAYS use get_implementation_advice):
 - "How should I implement user authentication?" -> get_implementation_advice
 - "How do I add caching to this API?" -> get_implementation_advice
+- "How should I implement authentication for my React + Vue website?" -> get_implementation_advice
+- "How should I implement authentication fro my React + Vue website?" -> get_implementation_advice (with typo)
+- "What's the best way to add user login?" -> get_implementation_advice
+- "How can I implement real-time notifications?" -> get_implementation_advice
+- "I need help implementing a payment system" -> get_implementation_advice
+- "How to implement file uploads?" -> get_implementation_advice
+- "Help me implement search functionality" -> get_implementation_advice
+- "How do I build a chat feature?" -> get_implementation_advice
+- "What's the best approach for user roles?" -> get_implementation_advice
+- "How can I add database caching?" -> get_implementation_advice
+- "I want to implement OAuth, how should I do it?" -> get_implementation_advice
+- "How should I structure my API endpoints?" -> get_implementation_advice
 
 Always be helpful and confirm what actions you're taking.
           `
