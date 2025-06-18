@@ -2,14 +2,14 @@ name: Deploy
 
 on:
   push:
-    branches: [ main ]
-    paths:
-      - 'voice-server-js/**'
-  workflow_dispatch:
+    branches:
+      - main
 
 jobs:
   build-and-deploy:
+    name: Build and Deploy
     runs-on: self-hosted
+    environment: prod
 
     env:
       DOCKER_HOST: tcp://10.0.0.35:2375  # Use remote Docker daemon
