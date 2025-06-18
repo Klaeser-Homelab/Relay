@@ -9,11 +9,10 @@ on:
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     env:
-      DOCKER_HOST: tcp://10.0.0.35:2375
-      DOCKER_CONTEXT_NAME: proxmox-ctx
+      DOCKER_HOST: tcp://10.0.0.35:2375  # Use remote Docker daemon
       DOCKER_COMPOSE_FILE: docker-compose.prod.yml
       VOICE_SERVER_IMAGE: relay-voice-server:latest
       # Backend Secrets
@@ -30,31 +29,17 @@ jobs:
           cd voice-server-js
           docker build -t ${{ env.VOICE_SERVER_IMAGE }} .
 
-      - name: Set up Docker context
-        run: |
-          docker context create ${{ env.DOCKER_CONTEXT_NAME }} --docker host=${{ env.DOCKER_HOST }}
-
-      - name: Save and load image to remote Docker
-        run: |
-          cd voice-server-js
-          docker save ${{ env.VOICE_SERVER_IMAGE }} > voice-server.tar
-          docker --context ${{ env.DOCKER_CONTEXT_NAME }} load < voice-server.tar
-          rm voice-server.tar
-
       - name: Stop and remove existing containers
         run: |
-          docker --context ${{ env.DOCKER_CONTEXT_NAME }} compose --file ${{ env.DOCKER_COMPOSE_FILE }} down || true
+          cd voice-server-js
+          docker compose --file ${{ env.DOCKER_COMPOSE_FILE }} down || true
 
       - name: Start new container
         run: |
-          docker --context ${{ env.DOCKER_CONTEXT_NAME }} compose --file ${{ env.DOCKER_COMPOSE_FILE }} up -d --remove-orphans
-
-      - name: Cleanup Docker context
-        if: always()
-        run: |
-          docker context rm ${{ env.DOCKER_CONTEXT_NAME }} --force || true
+          cd voice-server-js
+          docker compose --file ${{ env.DOCKER_COMPOSE_FILE }} up -d --remove-orphans
 
       - name: Test health endpoint
         run: |
           sleep 10
-          curl -f http://${{ secrets.PROXMOX_HEALTH_HOST }}:8080/health || exit 1
+          curl -f http://10.0.0.35:8080/health || exit 1
