@@ -1,6 +1,6 @@
 # Relay Voice Server (JavaScript)
 
-A voice-controlled interface for the Relay development tool, rewritten in JavaScript using the OpenAI Agent SDK for enhanced voice AI capabilities.
+A mobile friendly voice-controlled development proof of concept.
 
 ## Features
 

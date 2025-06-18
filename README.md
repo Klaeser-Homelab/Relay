@@ -6,14 +6,14 @@
 
 **Code from anywhere, control with your voice**
 
-Relay enables mobile-first software development through voice commands. Write code, manage git repositories, and execute development tasks from your phone while your development environment runs on your desktop.
+A mobile friendly voice-controlled development proof of concept.
 
 ## Overview
 
 Relay consists of two components:
 
 - **Relay Server**: Runs on your development machine, executing MCP tools and development commands
-- **Relay Mobile**: Voice-enabled mobile app for issuing commands and receiving audio feedback
+- **Relay Mobile**: Voice-enabled mobile website for issuing commands and receiving audio feedback.
 
 ## How It Works
 
