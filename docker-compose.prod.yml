@@ -1,4 +1,4 @@
-version: '3.8'
+name: relay
 
 services:
   frontend:
@@ -9,8 +9,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./frontend:/app
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - relay-network
     depends_on:

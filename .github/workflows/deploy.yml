@@ -33,7 +33,7 @@ jobs:
             -f Dockerfile.frontend \
             -t ${{ env.FRONTEND_IMAGE }} .
 
-      - name: Build Voice Server image
+      - name: Build Backend image
         run: |
           docker build \
             -f Dockerfile.backend \
@@ -60,11 +60,11 @@ jobs:
 
       - name: Create volume if not exists
         run: |
-          docker --context ${{ env.DOCKER_CONTEXT_NAME }} volume create voyagr-data || true
+          docker --context ${{ env.DOCKER_CONTEXT_NAME }} volume create relay-data || true
 
       - name: Stop and remove existing containers
         env:
-          COMPOSE_PROJECT_NAME: voyagr
+          COMPOSE_PROJECT_NAME: relay
         run: |
           docker --context ${{ env.DOCKER_CONTEXT_NAME }} compose --file ${{ env.DOCKER_COMPOSE_FILE }} \
             stop frontend backend || true
