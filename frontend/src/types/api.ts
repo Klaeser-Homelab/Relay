@@ -11,6 +11,8 @@ export interface GitHubRepository {
   lastOpened: string;
   stars: number;
   forks: number;
+  isCloned?: boolean;
+  localPath?: string;
 }
 
 export interface RepositoryStatus {
@@ -95,4 +97,28 @@ export interface GitHubPullRequest {
   base: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GitConfig {
+  baseDirectory: string;
+  gitUsername: string;
+  hasToken: boolean;
+}
+
+export interface RepositoryCloneResult {
+  success: boolean;
+  message: string;
+  localPath?: string;
+}
+
+export interface RepositoryInfo {
+  success: boolean;
+  data?: {
+    localPath: string;
+    isClean: boolean;
+    currentBranch: string;
+    lastCommit: string;
+    hasUncommittedChanges: boolean;
+  };
+  message?: string;
 }

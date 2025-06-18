@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 
 import { VoiceSession } from './voice-session.js';
 import { GitHubManager } from './github-manager.js';
+import { GitManager } from './git-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,6 +45,7 @@ class VoiceServer {
     }
     
     this.githubManager = new GitHubManager();
+    this.gitManager = new GitManager();
     this.setupMiddleware();
     this.setupRoutes();
     this.setupWebSocket();
@@ -74,7 +76,8 @@ class VoiceServer {
     api.get('/projects', async (req, res) => {
       try {
         const projects = await this.githubManager.listProjects();
-        res.json({ projects });
+        const projectsWithStatus = await this.gitManager.checkRepositoryStatus(projects);
+        res.json({ projects: projectsWithStatus });
       } catch (error) {
         console.error('Failed to list projects:', error);
         res.status(500).json({ error: error.message });
@@ -103,6 +106,76 @@ class VoiceServer {
       } catch (error) {
         console.error('Failed to get repository status:', error);
         res.status(400).json({ error: error.message });
+      }
+    });
+
+    // Git configuration endpoints
+    api.get('/config/git', async (req, res) => {
+      try {
+        const config = await this.gitManager.getConfig();
+        res.json(config);
+      } catch (error) {
+        console.error('Failed to get Git configuration:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    api.post('/config/git', async (req, res) => {
+      try {
+        const config = await this.gitManager.setConfig(req.body);
+        res.json(config);
+      } catch (error) {
+        console.error('Failed to set Git configuration:', error);
+        res.status(400).json({ error: error.message });
+      }
+    });
+
+    // Repository management endpoints
+    api.post('/repositories/clone', async (req, res) => {
+      try {
+        const { repository } = req.body;
+        if (!repository) {
+          return res.status(400).json({ error: 'Repository data required' });
+        }
+        const result = await this.gitManager.cloneRepository(repository);
+        res.json(result);
+      } catch (error) {
+        console.error('Failed to clone repository:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    api.post('/repositories/:name/pull', async (req, res) => {
+      try {
+        const repositoryName = req.params.name;
+        const repository = { name: repositoryName };
+        const result = await this.gitManager.pullRepository(repository);
+        res.json(result);
+      } catch (error) {
+        console.error('Failed to pull repository:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    api.delete('/repositories/:name', async (req, res) => {
+      try {
+        const repositoryName = req.params.name;
+        const result = await this.gitManager.removeRepository(repositoryName);
+        res.json(result);
+      } catch (error) {
+        console.error('Failed to remove repository:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    api.get('/repositories/:name/info', async (req, res) => {
+      try {
+        const repositoryName = req.params.name;
+        const result = await this.gitManager.getRepositoryInfo(repositoryName);
+        res.json(result);
+      } catch (error) {
+        console.error('Failed to get repository info:', error);
+        res.status(500).json({ error: error.message });
       }
     });
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Search, Star, GitFork, Lock, Globe, Calendar } from 'lucide-react';
-import type { GitHubRepository } from '../types/api';
+import { Search, Star, GitFork, Lock, Globe, Calendar, Download, CheckCircle, Loader, HardDrive } from 'lucide-react';
+import type { GitHubRepository, RepositoryCloneResult } from '../types/api';
 
 interface ProjectSelectorProps {
   projects: GitHubRepository[];
@@ -9,6 +9,7 @@ interface ProjectSelectorProps {
   error: string | null;
   onSelectProject: (project: GitHubRepository) => Promise<boolean>;
   onRefresh: () => void;
+  onCloneRepository?: (project: GitHubRepository) => Promise<boolean>;
 }
 
 export function ProjectSelector({ 
@@ -17,7 +18,8 @@ export function ProjectSelector({
   loading, 
   error, 
   onSelectProject,
-  onRefresh 
+  onRefresh,
+  onCloneRepository 
 }: ProjectSelectorProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterLanguage, setFilterLanguage] = useState('');
@@ -124,6 +126,7 @@ export function ProjectSelector({
                 project={project}
                 isSelected={selectedProject?.fullName === project.fullName}
                 onSelect={() => onSelectProject(project)}
+                onClone={onCloneRepository ? () => onCloneRepository(project) : undefined}
               />
             ))}
           </div>
@@ -143,9 +146,23 @@ interface ProjectCardProps {
   project: GitHubRepository;
   isSelected: boolean;
   onSelect: () => void;
+  onClone?: () => void;
 }
 
-function ProjectCard({ project, isSelected, onSelect }: ProjectCardProps) {
+function ProjectCard({ project, isSelected, onSelect, onClone }: ProjectCardProps) {
+  const [isCloning, setIsCloning] = useState(false);
+
+  const handleClone = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent selecting the project
+    if (!onClone || isCloning) return;
+    
+    setIsCloning(true);
+    try {
+      await onClone();
+    } finally {
+      setIsCloning(false);
+    }
+  };
   return (
     <div 
       className={`relative border rounded-lg p-4 cursor-pointer transition-all duration-200 hover:shadow-md ${
@@ -171,6 +188,30 @@ function ProjectCard({ project, isSelected, onSelect }: ProjectCardProps) {
           <h3 className="font-semibold text-gray-900 truncate">
             {project.name}
           </h3>
+        </div>
+        
+        {/* Clone status and button */}
+        <div className="flex items-center space-x-2">
+          {project.isCloned ? (
+            <div className="flex items-center text-green-600 text-xs">
+              <HardDrive className="w-3 h-3 mr-1" />
+              Local
+            </div>
+          ) : onClone ? (
+            <button
+              onClick={handleClone}
+              disabled={isCloning}
+              className="flex items-center text-blue-600 hover:text-blue-800 text-xs px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Clone repository locally"
+            >
+              {isCloning ? (
+                <Loader className="w-3 h-3 mr-1 animate-spin" />
+              ) : (
+                <Download className="w-3 h-3 mr-1" />
+              )}
+              {isCloning ? 'Cloning...' : 'Clone'}
+            </button>
+          ) : null}
         </div>
       </div>
 

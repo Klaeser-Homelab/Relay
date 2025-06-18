@@ -24,9 +24,11 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GH_TOKEN: ${GH_TOKEN}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GIT_USERNAME: ${GIT_USERNAME}
+      CODE_BASE_DIR: /home/relay/projects
     volumes:
-      # Mount projects directory for development access
-      - /home/user/projects:/home/relay/projects:ro
+      # Mount projects directory for development access (writable for cloning)
+      - /home/user/Code:/home/relay/projects:rw
       - /home/user/.gitconfig:/home/relay/.gitconfig:ro
       - /home/user/.ssh:/home/relay/.ssh:ro
       # Mount relay config if it exists

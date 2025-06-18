@@ -6,6 +6,7 @@ import { TranscriptionView } from './components/TranscriptionView';
 import { FunctionResults } from './components/FunctionResults';
 import { GeminiAdvice } from './components/GeminiAdvice';
 import { DeveloperMode } from './components/DeveloperMode';
+import { GitConfig } from './components/GitConfig';
 import { useGitHubProjects } from './hooks/useGitHubProjects';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudioRecording } from './hooks/useAudioRecording';
@@ -73,6 +74,34 @@ function App() {
     stopAudioRecording();
   };
 
+  const handleCloneRepository = async (project: any) => {
+    try {
+      const response = await fetch('/api/repositories/clone', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ repository: project }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // Refresh projects to update clone status
+        await fetchProjects();
+        return true;
+      } else {
+        console.error('Failed to clone repository:', result.message);
+        alert(`Failed to clone repository: ${result.message}`);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error cloning repository:', error);
+      alert('Error cloning repository. Please try again.');
+      return false;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -108,6 +137,11 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Git Configuration */}
+        <div className="mb-8">
+          <GitConfig onConfigUpdated={() => fetchProjects()} />
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left Column - Project Selection */}
           <div className="lg:col-span-2">
@@ -118,6 +152,7 @@ function App() {
               error={projectsError}
               onSelectProject={handleSelectProject}
               onRefresh={fetchProjects}
+              onCloneRepository={handleCloneRepository}
             />
           </div>
 
