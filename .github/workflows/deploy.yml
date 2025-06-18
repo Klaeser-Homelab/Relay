@@ -1,0 +1,80 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'voice-server-js/**'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+
+    env:
+      DOCKER_HOST: tcp://10.0.0.35:2375  # Use remote Docker daemon
+      DOCKER_COMPOSE_FILE: docker-compose.prod.yml
+      VOICE_SERVER_IMAGE: relay-voice-server:latest
+      DOCKER_CONTEXT_NAME: relay-ctx
+
+      # Backend Secrets
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Frontend image
+        run: |
+          docker build \
+            -f Dockerfile.frontend \
+            -t ${{ env.FRONTEND_IMAGE }} .
+
+      - name: Build Voice Server image
+        run: |
+          docker build \
+            -f Dockerfile.backend \
+            -t ${{ env.VOICE_SERVER_IMAGE }} .
+
+      - name: Set up Docker context
+        run: |
+          docker context \
+            create ${{ env.DOCKER_CONTEXT_NAME }} \
+            --docker host=${{ env.DOCKER_HOST }}
+
+      - name: Save and load images to remote Docker
+        run: |
+          # Save images
+          docker save ${{ env.FRONTEND_IMAGE }} > frontend.tar
+          docker save ${{ env.BACKEND_IMAGE }} > backend.tar
+          
+          # Load images on remote host
+          docker --context ${{ env.DOCKER_CONTEXT_NAME }} load < frontend.tar
+          docker --context ${{ env.DOCKER_CONTEXT_NAME }} load < backend.tar
+          
+          # Cleanup
+          rm frontend.tar backend.tar
+
+      - name: Create volume if not exists
+        run: |
+          docker --context ${{ env.DOCKER_CONTEXT_NAME }} volume create voyagr-data || true
+
+      - name: Stop and remove existing containers
+        env:
+          COMPOSE_PROJECT_NAME: voyagr
+        run: |
+          docker --context ${{ env.DOCKER_CONTEXT_NAME }} compose --file ${{ env.DOCKER_COMPOSE_FILE }} \
+            stop frontend backend || true
+          
+          docker --context ${{ env.DOCKER_CONTEXT_NAME }} compose --file ${{ env.DOCKER_COMPOSE_FILE }} \
+            rm -f frontend backend || true
+          
+          docker --context ${{ env.DOCKER_CONTEXT_NAME }} compose --file ${{ env.DOCKER_COMPOSE_FILE }} \
+            up -d --remove-orphans
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker context rm ${{ env.DOCKER_CONTEXT_NAME }} --force || true
