@@ -8,6 +8,14 @@ interface DeveloperModeProps {
 
 const AVAILABLE_FUNCTIONS = [
   {
+    name: 'ask_claude_to_make_plan',
+    description: 'Ask Claude to make a plan (opens terminal with claude -p)',
+    parameters: [
+      { name: 'prompt', type: 'string', required: true, placeholder: 'Describe what you want Claude to plan for' },
+      { name: 'workingDirectory', type: 'string', required: false, placeholder: 'Working directory (optional)' }
+    ]
+  },
+  {
     name: 'get_implementation_advice',
     description: 'Get implementation advice from Gemini Flash',
     parameters: [
@@ -129,7 +137,7 @@ export function DeveloperMode({ selectedProject, socket, connected }: DeveloperM
     <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
       <div className="flex items-center gap-2 mb-4">
         <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
-        <h3 className="text-lg font-semibold text-gray-900">Developer Mode</h3>
+        <h3 className="text-lg font-semibold text-gray-900">Function Tester</h3>
         <span className="text-sm text-gray-500">Project: {selectedProject}</span>
       </div>
 

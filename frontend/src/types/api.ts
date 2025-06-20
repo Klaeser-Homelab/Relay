@@ -62,9 +62,38 @@ export interface GeminiAdviceData {
   repository: string;
 }
 
+export interface ClaudePlanRequestData {
+  prompt: string;
+  workingDirectory: string;
+  repository: string;
+}
+
+export interface ClaudePlanResponseData {
+  prompt: string;
+  workingDirectory: string;
+  repository: string;
+  plan: string;
+  timestamp: string;
+}
+
+export interface ClaudeStreamingTextData {
+  content: string;
+  timestamp: string;
+}
+
+export interface ClaudeTodoWriteData {
+  todos: Array<{
+    id: string;
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed';
+    priority: 'high' | 'medium' | 'low';
+  }>;
+  timestamp: string;
+}
+
 export interface WebSocketMessage {
-  type: 'status' | 'transcription' | 'audio_response' | 'function_result' | 'gemini_advice';
-  data: VoiceSessionStatus | TranscriptionData | AudioResponseData | FunctionResultData | GeminiAdviceData;
+  type: 'status' | 'transcription' | 'audio_response' | 'function_result' | 'gemini_advice' | 'claude_plan_request' | 'claude_plan_response' | 'claude_streaming_text' | 'claude_todowrite';
+  data: VoiceSessionStatus | TranscriptionData | AudioResponseData | FunctionResultData | GeminiAdviceData | ClaudePlanRequestData | ClaudePlanResponseData | ClaudeStreamingTextData | ClaudeTodoWriteData;
 }
 
 export interface GitHubIssue {

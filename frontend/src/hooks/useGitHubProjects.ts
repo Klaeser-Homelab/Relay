@@ -52,6 +52,10 @@ export function useGitHubProjects() {
     }
   };
 
+  const clearProject = () => {
+    setSelectedProject(null);
+  };
+
   const getProjectStatus = async (projectName: string): Promise<RepositoryStatus | null> => {
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/status`);
@@ -77,6 +81,7 @@ export function useGitHubProjects() {
     error,
     fetchProjects,
     selectProject,
+    clearProject,
     getProjectStatus
   };
 }

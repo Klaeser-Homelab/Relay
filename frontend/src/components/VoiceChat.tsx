@@ -203,18 +203,6 @@ export function VoiceChat({
               </div>
             </div>
 
-            {/* Voice Commands Help */}
-            <div className="text-left bg-gray-50 rounded-lg p-4">
-              <h4 className="font-medium text-gray-900 mb-2">Try saying:</h4>
-              <ul className="text-sm text-gray-600 space-y-1">
-                <li>• "Create an issue for adding user authentication"</li>
-                <li>• "Show me the open issues"</li>
-                <li>• "List recent commits"</li>
-                <li>• "Get repository information"</li>
-                <li>• "Create a pull request from feature to main"</li>
-                <li>• "Close issue number 5"</li>
-              </ul>
-            </div>
           </>
         )}
       </div>

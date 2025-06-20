@@ -17,17 +17,38 @@ export class VoiceSession {
     this.openaiClient = new OpenAI({ apiKey: openaiAPIKey });
     this.closed = false;
     this.processedCallIds = new Set(); // Track processed function calls to prevent duplicates
+    this.currentTranscript = ''; // Accumulate streaming transcription
+    this.recentFunctionCalls = new Map(); // Track recent function calls by content hash
     
     this.setupSocketHandlers();
   }
 
   setupSocketHandlers() {
-    this.socket.on('audio', (data) => this.handleAudioMessage(data));
-    this.socket.on('start_recording', () => this.handleStartRecording());
-    this.socket.on('stop_recording', () => this.handleStopRecording());
-    this.socket.on('select_project', (data) => this.handleSelectProject(data));
-    this.socket.on('test_function', (data) => this.handleTestFunction(data));
-    this.socket.on('disconnect', () => this.close());
+    console.log('🔌 [DEBUG] Setting up socket handlers for session:', this.sessionId);
+    this.socket.on('audio', (data) => {
+      console.log('🎵 [DEBUG] Audio event received');
+      this.handleAudioMessage(data);
+    });
+    this.socket.on('start_recording', () => {
+      console.log('▶️ [DEBUG] start_recording event received');
+      this.handleStartRecording();
+    });
+    this.socket.on('stop_recording', () => {
+      console.log('⏹️ [DEBUG] stop_recording event received');
+      this.handleStopRecording();
+    });
+    this.socket.on('select_project', (data) => {
+      console.log('📁 [DEBUG] select_project event received:', data);
+      this.handleSelectProject(data);
+    });
+    this.socket.on('test_function', (data) => {
+      console.log('🧪 [DEBUG] test_function event received:', data);
+      this.handleTestFunction(data);
+    });
+    this.socket.on('disconnect', () => {
+      console.log('🔌 [DEBUG] Socket disconnect event received');
+      this.close();
+    });
   }
 
   async start() {
@@ -95,6 +116,9 @@ export class VoiceSession {
         voice: 'alloy',
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
+        input_audio_transcription: {
+          model: 'whisper-1'
+        },
         tools: this.getToolDefinitions()
       }
     };
@@ -286,15 +310,35 @@ export class VoiceSession {
           },
           required: ['question']
         }
+      },
+      {
+        type: 'function',
+        name: 'ask_claude_to_make_plan',
+        description: 'CALL THIS FUNCTION when user says "Ask claude to make a plan" or similar variations asking Claude to create a plan. This will open a terminal session and run claude -p with the user\'s prompt.',
+        parameters: {
+          type: 'object',
+          properties: {
+            prompt: {
+              type: 'string',
+              description: 'The planning prompt to send to Claude'
+            },
+            workingDirectory: {
+              type: 'string',
+              description: 'The working directory path for the terminal session (optional, defaults to repository path)'
+            }
+          },
+          required: ['prompt']
+        }
       }
     ];
   }
 
   async handleAudioMessage(data) {
+    console.log('🎙️ [DEBUG] handleAudioMessage called, data type:', typeof data);
     this.updateActivity();
     
     if (!this.openaiWs || this.openaiWs.readyState !== WebSocket.OPEN) {
-      console.warn('OpenAI WebSocket not connected, ignoring audio');
+      console.warn('🎙️ [DEBUG] OpenAI WebSocket not connected, ignoring audio');
       return;
     }
 
@@ -303,16 +347,19 @@ export class VoiceSession {
       
       if (Buffer.isBuffer(data)) {
         audioData = data.toString('base64');
+        console.log('🎙️ [DEBUG] Converted Buffer to base64, length:', audioData.length);
       } else if (typeof data === 'string') {
         audioData = data;
+        console.log('🎙️ [DEBUG] Using string data directly, length:', audioData.length);
       } else if (data.audio_data) {
         audioData = data.audio_data;
+        console.log('🎙️ [DEBUG] Extracted audio_data, length:', audioData.length);
       } else {
-        console.warn('Invalid audio data format');
+        console.warn('🎙️ [DEBUG] Invalid audio data format:', data);
         return;
       }
 
-      console.log(`Received audio data: ${audioData.length} chars`);
+      console.log(`🎙️ [DEBUG] Sending audio to OpenAI: ${audioData.length} chars`);
       
       const audioAppend = {
         type: 'input_audio_buffer.append',
@@ -320,21 +367,25 @@ export class VoiceSession {
       };
 
       this.openaiWs.send(JSON.stringify(audioAppend));
+      console.log('🎙️ [DEBUG] Audio sent to OpenAI successfully');
     } catch (error) {
-      console.error('Failed to process audio:', error);
+      console.error('🎙️ [DEBUG] Failed to process audio:', error);
       this.sendStatusMessage('error', 'Failed to process audio', this.currentProject);
     }
   }
 
   async handleStartRecording() {
+    console.log('🎬 [DEBUG] handleStartRecording called');
     this.isRecording = true;
     this.sendStatusMessage('connecting', 'Connecting to voice assistant...', this.currentProject);
     
     try {
+      console.log('🎬 [DEBUG] Initializing OpenAI Realtime...');
       await this.initializeOpenAIRealtime();
+      console.log('🎬 [DEBUG] OpenAI Realtime initialized successfully');
       this.sendStatusMessage('recording', 'Recording started - speak now', this.currentProject);
     } catch (error) {
-      console.error('Failed to start recording:', error);
+      console.error('🎬 [DEBUG] Failed to start recording:', error);
       this.sendStatusMessage('error', 'Failed to connect to voice assistant', this.currentProject);
       this.isRecording = false;
     }
@@ -387,20 +438,24 @@ export class VoiceSession {
   }
 
   handleOpenAIMessage(message) {
+    console.log('🤖 [DEBUG] OpenAI message received, type:', message.type);
     switch (message.type) {
       case 'response.audio.delta':
         this.handleAudioDelta(message);
         break;
       case 'response.audio.done':
-        console.log('OpenAI audio response complete');
+        console.log('🤖 [DEBUG] OpenAI audio response complete');
         break;
       case 'response.audio_transcript.delta':
-        this.handleAudioTranscriptDelta(message);
+        console.log('🤖 [DEBUG] Audio transcript delta received (ignoring - this is OpenAI response)');
+        // Don't handle OpenAI's response transcription - we only want user input transcriptions
         break;
       case 'response.audio_transcript.done':
-        this.handleAudioTranscriptDone(message);
+        console.log('🤖 [DEBUG] Audio transcript done received (ignoring - this is OpenAI response)');
+        // Don't handle OpenAI's response transcription - we only want user input transcriptions
         break;
       case 'conversation.item.input_audio_transcription.completed':
+        console.log('🤖 [DEBUG] Input audio transcription completed');
         this.handleTranscription(message);
         break;
       case 'conversation.item.created':
@@ -471,13 +526,17 @@ export class VoiceSession {
   }
 
   handleTranscription(message) {
+    console.log('📝 [DEBUG] handleTranscription called:', message);
     if (message.transcript) {
+      console.log('📝 [DEBUG] Final transcription received, sending to frontend:', message.transcript);
       this.sendMessage({
         type: 'transcription',
         data: {
           text: message.transcript
         }
       });
+    } else {
+      console.log('📝 [DEBUG] No transcript in message');
     }
   }
 
@@ -486,22 +545,58 @@ export class VoiceSession {
     const functionName = message.name;
     const args = JSON.parse(message.arguments || '{}');
 
-    // Prevent duplicate function calls
+    // Prevent duplicate function calls by call_id
     if (this.processedCallIds.has(callId)) {
-      console.log(`Skipping duplicate function call: ${callId}`);
+      console.log(`Skipping duplicate function call by call_id: ${callId}`);
       return;
     }
     this.processedCallIds.add(callId);
+
+    // Additional deduplication by function content hash (to catch different call_ids with same content)
+    const contentHash = `${functionName}:${JSON.stringify(args)}`;
+    const now = Date.now();
+    const recentCallTime = this.recentFunctionCalls.get(contentHash);
+    
+    // If same function with same args was called within last 5 seconds, skip it
+    if (recentCallTime && (now - recentCallTime) < 5000) {
+      console.log(`Skipping duplicate function call by content: ${functionName} (${contentHash})`);
+      return;
+    }
+    this.recentFunctionCalls.set(contentHash, now);
+
+    // Clean up old entries (older than 30 seconds)
+    for (const [hash, timestamp] of this.recentFunctionCalls.entries()) {
+      if (now - timestamp > 30000) {
+        this.recentFunctionCalls.delete(hash);
+      }
+    }
 
     const functionType = functionName === 'get_implementation_advice' ? 'Gemini' : 'GitHub';
     console.log(`Executing ${functionType} function: ${functionName} with args:`, args);
     this.sendStatusMessage('executing', `Executing ${functionType}: ${functionName}`, this.currentProject);
 
+    // Send immediate "Asking Claude..." feedback for Claude planning functions
+    if (functionName === 'ask_claude_to_make_plan') {
+      console.log('✓ Sending immediate "Asking Claude..." feedback');
+      this.sendMessage({
+        type: 'function_result',
+        data: {
+          function: functionName,
+          result: 'Asking Claude...'
+        }
+      });
+    }
+
     try {
+      // Create streaming callback for Claude planning functions
+      const streamCallback = (functionName === 'ask_claude_to_make_plan') ? 
+        (streamMessage) => this.handleClaudeStreamMessage(streamMessage) : null;
+
       const result = await this.githubManager.executeFunction(
         this.currentProject,
         functionName,
-        args
+        args,
+        streamCallback
       );
 
       if (result.success) {
@@ -534,6 +629,41 @@ export class VoiceSession {
             this.openaiWs.send(JSON.stringify(functionResult));
             // Deliberately NOT sending response.create to prevent OpenAI commentary
           }
+        } else if (functionName === 'ask_claude_to_make_plan') {
+          // Handle Claude planning with SDK - streaming already handled, no need for final plan
+          console.log('=== VOICE SESSION: HANDLING CLAUDE SDK PLAN ===');
+          console.log('Function result from GitHub manager:', JSON.stringify(result, null, 2));
+          
+          // Note: function_result was already sent immediately when function started
+          // Individual sections and todos were streamed progressively
+          // No need to send the complete plan again as it would duplicate content
+          
+          console.log('✓ Claude plan streaming completed, all content already sent');
+          
+          // Send simple confirmation to OpenAI (bypass response generation)
+          const functionResult = {
+            type: 'conversation.item.create',
+            item: {
+              type: 'function_call_output',
+              call_id: callId,
+              output: JSON.stringify({ 
+                status: 'completed', 
+                message: 'Claude plan generated successfully' 
+              })
+            }
+          };
+          
+          console.log('✓ Sending confirmation to OpenAI');
+          
+          if (this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN) {
+            this.openaiWs.send(JSON.stringify(functionResult));
+            console.log('✓ OpenAI confirmation sent');
+            // Deliberately NOT sending response.create to prevent OpenAI commentary
+          } else {
+            console.log('❌ OpenAI WebSocket not available');
+          }
+          
+          console.log('=== VOICE SESSION: CLAUDE SDK PLAN COMPLETE ===');
         } else {
           // Normal GitHub function handling - keep OpenAI in the loop
           const functionResultData = {
@@ -596,23 +726,45 @@ export class VoiceSession {
 
   handleAudioTranscriptDelta(message) {
     if (message.delta) {
-      console.log('Audio transcript delta:', message.delta);
-      this.sendMessage({
-        type: 'transcription',
-        data: {
-          text: message.delta
-        }
-      });
+      console.log('📝 [DEBUG] Audio transcript delta (not sending to frontend):', message.delta);
+      // Accumulate the streaming transcript but don't send individual deltas
+      this.currentTranscript += message.delta;
     }
   }
 
   handleAudioTranscriptDone(message) {
     if (message.transcript) {
-      console.log('Audio transcript complete:', message.transcript);
+      console.log('📝 [DEBUG] Audio transcript complete, sending to frontend:', message.transcript);
       this.sendMessage({
         type: 'transcription',
         data: {
           text: message.transcript
+        }
+      });
+      // Reset accumulated transcript
+      this.currentTranscript = '';
+    }
+  }
+
+  handleClaudeStreamMessage(streamMessage) {
+    console.log('✓ Handling Claude stream message:', streamMessage.type);
+    
+    if (streamMessage.type === 'claude_text') {
+      // Send streaming text response as a Claude message
+      this.sendMessage({
+        type: 'claude_streaming_text',
+        data: {
+          content: streamMessage.content,
+          timestamp: streamMessage.timestamp
+        }
+      });
+    } else if (streamMessage.type === 'claude_todowrite') {
+      // Send TodoWrite tool call as a structured message
+      this.sendMessage({
+        type: 'claude_todowrite',
+        data: {
+          todos: streamMessage.content.todos,
+          timestamp: streamMessage.timestamp
         }
       });
     }
@@ -634,22 +786,26 @@ export class VoiceSession {
       const contextUpdate = {
         type: 'session.update',
         session: {
+          tools: this.getToolDefinitions(),
           instructions: `
 You are controlling GitHub for repository: ${this.currentProject}
 Repository: ${status.fullName}
 URL: ${status.url}
-Available commands: create_github_issue, update_github_issue, close_github_issue, list_issues, get_repository_info, list_commits, create_pull_request, list_pull_requests, get_implementation_advice
+Available commands: create_github_issue, update_github_issue, close_github_issue, list_issues, get_repository_info, list_commits, create_pull_request, list_pull_requests, get_implementation_advice, ask_claude_to_make_plan
 
 FUNCTION PRIORITY RULES:
-1. ALWAYS use get_implementation_advice for ANY question asking HOW to implement, build, or do something
-2. Only use create_github_issue when user explicitly wants to CREATE an issue, not when asking for implementation help
-3. Implementation questions should NEVER create issues - they should get advice first
+1. ALWAYS use ask_claude_to_make_plan when user says "Ask claude to make a plan" or similar requests for Claude to create a plan
+2. ALWAYS use get_implementation_advice for ANY question asking HOW to implement, build, or do something
+3. Only use create_github_issue when user explicitly wants to CREATE an issue, not when asking for implementation help
+4. Implementation questions should NEVER create issues - they should get advice first
 
 IMPORTANT: When get_implementation_advice returns results, you must ONLY present the Gemini advice exactly as provided. DO NOT add your own analysis, explanations, or additional recommendations. Act as a presenter of Gemini's response, not as a competing AI assistant. Simply relay the implementation advice that Gemini provided.
 
 When the user gives voice commands, convert them to appropriate function calls.
 
 Examples:
+- "Ask claude to make a plan" -> ask_claude_to_make_plan
+- "Ask claude to make a plan for user authentication" -> ask_claude_to_make_plan
 - "Create an issue for adding user authentication" -> create_github_issue
 - "Update issue 5 to mark it as completed" -> update_github_issue  
 - "Close issue 3" -> close_github_issue
@@ -717,7 +873,13 @@ Always be helpful and confirm what actions you're taking.
         await this.handleSelectProject(project);
       }
 
-      const functionType = functionName === 'get_implementation_advice' ? 'Gemini' : 'GitHub';
+      let functionType = 'GitHub';
+      if (functionName === 'get_implementation_advice') {
+        functionType = 'Gemini';
+      } else if (functionName === 'ask_claude_to_make_plan') {
+        functionType = 'Claude Code SDK';
+      }
+      
       this.sendStatusMessage('executing', `Testing ${functionType}: ${functionName}`, this.currentProject);
 
       const result = await this.githubManager.executeFunction(
@@ -728,16 +890,52 @@ Always be helpful and confirm what actions you're taking.
 
       console.log(`Developer mode: Function ${functionName} result:`, result);
 
-      const functionResultData = {
-        function: functionName,
-        result: result.data || result.message,
-        success: result.success
-      };
+      // Handle Claude plan responses specially
+      if (functionName === 'ask_claude_to_make_plan' && result.success) {
+        console.log('✓ Sending Claude plan response to frontend from test function');
+        
+        const messageData = {
+          prompt: result.data?.prompt,
+          workingDirectory: result.data?.workingDirectory,
+          repository: result.data?.repository,
+          plan: result.data?.plan,
+          timestamp: result.data?.timestamp
+        };
+        
+        this.sendMessage({
+          type: 'claude_plan_response',
+          data: messageData
+        });
+        
+        // Also send as function result for Developer Mode display
+        const functionResultData = {
+          function: functionName,
+          result: {
+            prompt: result.data?.prompt,
+            planLength: result.data?.plan?.length || 0,
+            repository: result.data?.repository,
+            workingDirectory: result.data?.workingDirectory
+          },
+          success: result.success
+        };
 
-      this.sendMessage({
-        type: 'function_result',
-        data: functionResultData
-      });
+        this.sendMessage({
+          type: 'function_result',
+          data: functionResultData
+        });
+      } else {
+        // Normal function result handling
+        const functionResultData = {
+          function: functionName,
+          result: result.data || result.message,
+          success: result.success
+        };
+
+        this.sendMessage({
+          type: 'function_result',
+          data: functionResultData
+        });
+      }
 
       this.sendStatusMessage(
         result.success ? 'completed' : 'error',

@@ -8,10 +8,11 @@ import '@xterm/xterm/css/xterm.css';
 interface TerminalProps {
   repoPath?: string;
   localPath?: string;
+  claudePrompt?: string;
   onClose: () => void;
 }
 
-export function Terminal({ repoPath, localPath, onClose }: TerminalProps) {
+export function Terminal({ repoPath, localPath, claudePrompt, onClose }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminalInstance = useRef<XTerm | null>(null);
   const fitAddon = useRef<FitAddon | null>(null);
@@ -82,7 +83,25 @@ export function Terminal({ repoPath, localPath, onClose }: TerminalProps) {
     });
 
     socket.on('terminal_ready', () => {
-      console.log('Terminal session ready');
+      console.log('=== TERMINAL: Session ready ===');
+      console.log('Claude prompt provided:', claudePrompt);
+      
+      // Auto-run Claude command if prompt is provided
+      if (claudePrompt) {
+        const command = `claude -p "${claudePrompt}"\n`;
+        console.log('=== TERMINAL: Preparing Claude command ===');
+        console.log('Command to execute:', JSON.stringify(command));
+        console.log('Socket connected:', socket.connected);
+        
+        setTimeout(() => {
+          console.log('=== TERMINAL: Sending Claude command ===');
+          console.log('Emitting terminal_command with:', { command });
+          socket.emit('terminal_command', { command });
+          console.log('✓ Command sent to backend');
+        }, 500); // Small delay to ensure terminal is ready
+      } else {
+        console.log('No Claude prompt provided - regular terminal session');
+      }
     });
 
     socket.on('terminal_output', (data) => {

@@ -26,11 +26,15 @@ export function useAudioRecording() {
   }, []);
 
   const startRecording = useCallback(async () => {
+    console.log('🎤 [DEBUG] startRecording called, isSupported:', state.isSupported, 'isRecording:', state.isRecording);
+    
     if (!state.isSupported || state.isRecording) {
+      console.log('🎤 [DEBUG] Cannot start recording - not supported or already recording');
       return false;
     }
 
     try {
+      console.log('🎤 [DEBUG] Requesting microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: 24000,
@@ -39,6 +43,7 @@ export function useAudioRecording() {
           noiseSuppression: true
         }
       });
+      console.log('🎤 [DEBUG] Microphone access granted, stream:', stream);
 
       streamRef.current = stream;
 
@@ -59,7 +64,10 @@ export function useAudioRecording() {
       processorRef.current = audioContextRef.current.createScriptProcessor(bufferSize, 1, 1);
       
       processorRef.current.onaudioprocess = (event) => {
-        if (!onAudioData.current) return;
+        if (!onAudioData.current) {
+          console.log('🎤 [DEBUG] onAudioData callback not set');
+          return;
+        }
         
         const inputBuffer = event.inputBuffer;
         const inputData = inputBuffer.getChannelData(0);
@@ -75,6 +83,8 @@ export function useAudioRecording() {
         // Convert to base64
         const uint8Array = new Uint8Array(pcm16Buffer.buffer);
         const base64 = btoa(String.fromCharCode(...uint8Array));
+        
+        console.log('🎤 [DEBUG] Sending audio chunk, length:', base64.length, 'samples:', inputData.length);
         onAudioData.current(base64);
       };
 

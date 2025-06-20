@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { VoiceSessionStatus, TranscriptionData, AudioResponseData, FunctionResultData, GeminiAdviceData } from '../types/api';
+import type { VoiceSessionStatus, TranscriptionData, AudioResponseData, FunctionResultData, GeminiAdviceData, ClaudePlanRequestData, ClaudePlanResponseData, ClaudeStreamingTextData, ClaudeTodoWriteData } from '../types/api';
 
 export interface WebSocketState {
   socket: Socket | null;
@@ -9,6 +9,10 @@ export interface WebSocketState {
   transcriptions: TranscriptionData[];
   functionResults: FunctionResultData[];
   geminiAdvice: GeminiAdviceData[];
+  claudePlanRequests: ClaudePlanRequestData[];
+  claudePlanResponses: ClaudePlanResponseData[];
+  claudeStreamingTexts: ClaudeStreamingTextData[];
+  claudeTodoWrites: ClaudeTodoWriteData[];
 }
 
 export function useWebSocket() {
@@ -18,7 +22,11 @@ export function useWebSocket() {
     status: null,
     transcriptions: [],
     functionResults: [],
-    geminiAdvice: []
+    geminiAdvice: [],
+    claudePlanRequests: [],
+    claudePlanResponses: [],
+    claudeStreamingTexts: [],
+    claudeTodoWrites: []
   });
 
   const socketRef = useRef<Socket | null>(null);
@@ -34,8 +42,12 @@ export function useWebSocket() {
     });
 
     socket.on('connect', () => {
-      console.log('WebSocket connected');
+      console.log('🔌 [DEBUG] WebSocket connected, initializing voice session...');
       setState(prev => ({ ...prev, connected: true, socket }));
+      
+      // Initialize voice session on connection
+      socket.emit('voice_session');
+      console.log('🔌 [DEBUG] voice_session event sent to backend');
     });
 
     socket.on('disconnect', () => {
@@ -49,11 +61,12 @@ export function useWebSocket() {
     });
 
     socket.on('transcription', (data: TranscriptionData) => {
-      console.log('Transcription:', data);
-      setState(prev => ({
-        ...prev,
-        transcriptions: [...prev.transcriptions, data]
-      }));
+      console.log('📝 [DEBUG] Transcription received in frontend:', data);
+      setState(prev => {
+        const newTranscriptions = [...prev.transcriptions, data];
+        console.log('📝 [DEBUG] Updated transcriptions count:', newTranscriptions.length);
+        return { ...prev, transcriptions: newTranscriptions };
+      });
     });
 
     socket.on('audio_response', (data: AudioResponseData) => {
@@ -86,6 +99,54 @@ export function useWebSocket() {
       });
     });
 
+    socket.on('claude_plan_request', (data: ClaudePlanRequestData) => {
+      console.log('=== FRONTEND: Claude plan request received ===');
+      console.log('Request data:', JSON.stringify(data, null, 2));
+      setState(prev => {
+        const newRequests = [...prev.claudePlanRequests, data];
+        console.log('✓ Added to state, total requests:', newRequests.length);
+        return {
+          ...prev,
+          claudePlanRequests: newRequests
+        };
+      });
+    });
+
+    socket.on('claude_plan_response', (data: ClaudePlanResponseData) => {
+      console.log('=== FRONTEND: Claude plan response received ===');
+      console.log('Response data:', JSON.stringify({ ...data, plan: `${data.plan?.length || 0} characters` }, null, 2));
+      setState(prev => {
+        const newResponses = [...prev.claudePlanResponses, data];
+        console.log('✓ Added plan to state, total responses:', newResponses.length);
+        return {
+          ...prev,
+          claudePlanResponses: newResponses
+        };
+      });
+    });
+
+    socket.on('claude_streaming_text', (data: ClaudeStreamingTextData) => {
+      console.log('✓ Claude streaming text received:', data.content.substring(0, 100) + '...');
+      setState(prev => {
+        const newTexts = [...prev.claudeStreamingTexts, data];
+        return {
+          ...prev,
+          claudeStreamingTexts: newTexts
+        };
+      });
+    });
+
+    socket.on('claude_todowrite', (data: ClaudeTodoWriteData) => {
+      console.log('✓ Claude TodoWrite received:', data.todos.length, 'todos');
+      setState(prev => {
+        const newTodoWrites = [...prev.claudeTodoWrites, data];
+        return {
+          ...prev,
+          claudeTodoWrites: newTodoWrites
+        };
+      });
+    });
+
     socket.on('connect_error', (error) => {
       console.error('WebSocket connection error:', error);
     });
@@ -102,20 +163,32 @@ export function useWebSocket() {
   }, []);
 
   const startRecording = useCallback(() => {
+    console.log('🎬 [DEBUG] WebSocket startRecording called, connected:', socketRef.current?.connected);
     if (socketRef.current?.connected) {
+      console.log('🎬 [DEBUG] Emitting start_recording to backend');
       socketRef.current.emit('start_recording');
+    } else {
+      console.log('🎬 [DEBUG] Socket not connected, cannot start recording');
     }
   }, []);
 
   const stopRecording = useCallback(() => {
+    console.log('🛑 [DEBUG] WebSocket stopRecording called, connected:', socketRef.current?.connected);
     if (socketRef.current?.connected) {
+      console.log('🛑 [DEBUG] Emitting stop_recording to backend');
       socketRef.current.emit('stop_recording');
+    } else {
+      console.log('🛑 [DEBUG] Socket not connected, cannot stop recording');
     }
   }, []);
 
   const sendAudio = useCallback((audioData: string) => {
+    console.log('📡 [DEBUG] sendAudio called, socket connected:', socketRef.current?.connected, 'audio length:', audioData.length);
     if (socketRef.current?.connected) {
       socketRef.current.emit('audio', { audio_data: audioData });
+      console.log('📡 [DEBUG] Audio data sent to backend');
+    } else {
+      console.log('📡 [DEBUG] Socket not connected, audio not sent');
     }
   }, []);
 
@@ -137,6 +210,22 @@ export function useWebSocket() {
     setState(prev => ({ ...prev, geminiAdvice: [] }));
   }, []);
 
+  const clearClaudePlanRequests = useCallback(() => {
+    setState(prev => ({ ...prev, claudePlanRequests: [] }));
+  }, []);
+
+  const clearClaudePlanResponses = useCallback(() => {
+    setState(prev => ({ ...prev, claudePlanResponses: [] }));
+  }, []);
+
+  const clearClaudeStreamingTexts = useCallback(() => {
+    setState(prev => ({ ...prev, claudeStreamingTexts: [] }));
+  }, []);
+
+  const clearClaudeTodoWrites = useCallback(() => {
+    setState(prev => ({ ...prev, claudeTodoWrites: [] }));
+  }, []);
+
   useEffect(() => {
     return () => {
       disconnect();
@@ -154,6 +243,10 @@ export function useWebSocket() {
     clearTranscriptions,
     clearFunctionResults,
     clearGeminiAdvice,
+    clearClaudePlanRequests,
+    clearClaudePlanResponses,
+    clearClaudeStreamingTexts,
+    clearClaudeTodoWrites,
     socket: socketRef.current
   };
 }

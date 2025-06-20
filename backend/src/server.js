@@ -23,8 +23,10 @@ function obscure(key) {
   return key.substring(0,3) + '***' + key.substring(key.length-2);
 }
 console.log(`OPENAI_API_KEY: ${obscure(process.env.OPENAI_API_KEY)}`);
+console.log(`ANTHROPIC_API_KEY: ${obscure(process.env.ANTHROPIC_API_KEY)}`);
 console.log(`GEMINI_API_KEY: ${obscure(process.env.GEMINI_API_KEY)}`);
 console.log(`GH_TOKEN: ${obscure(process.env.GH_TOKEN)}`);
+console.log(`DEFAULT_CODE_PATH: ${process.env.DEFAULT_CODE_PATH || '(not set, using default)'}`);
 
 class VoiceServer {
   constructor() {
@@ -181,6 +183,76 @@ class VoiceServer {
       }
     });
 
+    // Execute GitHub function
+    api.post('/github/execute', async (req, res) => {
+      try {
+        const { projectName, functionName, args } = req.body;
+        
+        if (!functionName) {
+          return res.status(400).json({ 
+            success: false, 
+            error: 'Function name is required' 
+          });
+        }
+
+        const result = await this.githubManager.executeFunction(projectName, functionName, args);
+        res.json(result);
+      } catch (error) {
+        console.error('Failed to execute GitHub function:', error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
+
+    // Save plan as GitHub issue
+    api.post('/plans/save-as-issue', async (req, res) => {
+      try {
+        const { plan, title, repository } = req.body;
+        
+        if (!plan || !title) {
+          return res.status(400).json({ 
+            success: false, 
+            error: 'Plan content and title are required' 
+          });
+        }
+
+        // Select the repository if provided
+        if (repository) {
+          await this.githubManager.selectProject(repository);
+        }
+
+        // Create the GitHub issue
+        const result = await this.githubManager.createGitHubIssue({
+          title: title,
+          body: plan,
+          labels: ['plan', 'claude-generated']
+        });
+
+        if (result.success) {
+          console.log(`Plan saved as GitHub issue: ${result.data.url}`);
+          res.json({
+            success: true,
+            message: result.message,
+            issueUrl: result.data.url,
+            issueNumber: result.data.number
+          });
+        } else {
+          res.status(500).json({
+            success: false,
+            error: result.message
+          });
+        }
+      } catch (error) {
+        console.error('Failed to save plan as GitHub issue:', error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
+
     this.app.use('/api', api);
 
     this.app.get('*', (req, res) => {
@@ -210,6 +282,7 @@ class VoiceServer {
 
       // Handle voice session initialization
       socket.on('voice_session', () => {
+        console.log('🎙️ [DEBUG] Voice session requested for session:', sessionId);
         const session = new VoiceSession(
           sessionId,
           socket,
@@ -217,6 +290,7 @@ class VoiceServer {
           this.githubManager
         );
         this.sessions.set(sessionId, session);
+        console.log('🎙️ [DEBUG] Voice session created, starting...');
         session.start();
       });
 
@@ -275,14 +349,29 @@ class VoiceServer {
   }
 
   handleTerminalCommand(socket, sessionId, data) {
+    console.log('=== SERVER: Terminal command received ===');
+    console.log('Session ID:', sessionId);
+    console.log('Command data:', JSON.stringify(data, null, 2));
+    
     const terminalSession = this.terminalSessions.get(sessionId);
     if (!terminalSession || !terminalSession.ptyProcess) {
+      console.log('❌ Terminal session not found for:', sessionId);
       socket.emit('terminal_error', { message: 'Terminal session not found' });
       return;
     }
 
     const { command } = data;
-    terminalSession.ptyProcess.write(command);
+    console.log('✓ Terminal session found, writing command to PTY');
+    console.log('Command being written:', JSON.stringify(command));
+    console.log('Working directory:', terminalSession.workingDirectory);
+    
+    try {
+      terminalSession.ptyProcess.write(command);
+      console.log('✓ Command written to PTY successfully');
+    } catch (error) {
+      console.error('❌ Error writing to PTY:', error);
+      socket.emit('terminal_error', { message: `Failed to execute command: ${error.message}` });
+    }
   }
 
   handleTerminalResize(sessionId, data) {

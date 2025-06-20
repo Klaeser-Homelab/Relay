@@ -8,7 +8,7 @@ const execAsync = promisify(exec);
 export class GitManager {
   constructor() {
     this.githubToken = process.env.GH_TOKEN;
-    this.baseDirectory = process.env.CODE_BASE_DIR || '/home/relay/projects';
+    this.baseDirectory = process.env.DEFAULT_CODE_PATH || '/home/relay/projects';
     this.gitUsername = process.env.GIT_USERNAME || '';
   }
 

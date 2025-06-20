@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { ClaudeCodeManager } from './claude-code-manager.js';
 
 export class GitHubManager {
   constructor() {
@@ -19,6 +20,7 @@ export class GitHubManager {
     });
     
     this.genAI = this.geminiApiKey ? new GoogleGenerativeAI(this.geminiApiKey) : null;
+    this.claudeCodeManager = new ClaudeCodeManager();
     
     this.currentRepository = null;
   }
@@ -150,7 +152,7 @@ export class GitHubManager {
     }
   }
 
-  async executeFunction(projectName, functionName, args) {
+  async executeFunction(projectName, functionName, args, onStreamMessage = null) {
     console.log(`Executing GitHub function: ${functionName} with args:`, args);
 
     if (projectName) {
@@ -166,6 +168,8 @@ export class GitHubManager {
         return await this.listIssues(args);
       case 'close_github_issue':
         return await this.closeGitHubIssue(args);
+      case 'add_issue_comment':
+        return await this.addIssueComment(args);
       case 'get_repository_info':
         return await this.getRepositoryInfo();
       case 'list_commits':
@@ -176,6 +180,8 @@ export class GitHubManager {
         return await this.listPullRequests(args);
       case 'get_implementation_advice':
         return await this.getImplementationAdvice(args);
+      case 'ask_claude_to_make_plan':
+        return await this.askClaudeToMakePlan(args, onStreamMessage);
       default:
         return {
           success: false,
@@ -297,6 +303,53 @@ export class GitHubManager {
       ...args,
       state: 'closed'
     });
+  }
+
+  async addIssueComment(args) {
+    if (!this.currentRepository) {
+      return {
+        success: false,
+        message: 'No repository selected'
+      };
+    }
+
+    const { number, body } = args;
+
+    if (!number || !body) {
+      return {
+        success: false,
+        message: 'Issue number and comment body are required'
+      };
+    }
+
+    try {
+      console.log(`Adding comment to issue #${number} in ${this.currentRepository.fullName}`);
+      
+      const { data: comment } = await this.octokit.rest.issues.createComment({
+        owner: this.currentRepository.owner,
+        repo: this.currentRepository.name,
+        issue_number: number,
+        body
+      });
+
+      console.log(`Successfully added comment to issue #${number}`);
+
+      return {
+        success: true,
+        message: `Comment added to issue #${number}`,
+        data: {
+          id: comment.id,
+          url: comment.html_url,
+          issueNumber: number
+        }
+      };
+    } catch (error) {
+      console.error('Failed to add issue comment:', error);
+      return {
+        success: false,
+        message: `Failed to add comment: ${error.message}`
+      };
+    }
   }
 
   async listIssues(args = {}) {
@@ -585,6 +638,74 @@ Please provide specific, actionable implementation advice considering the reposi
       return {
         success: false,
         message: `Failed to get implementation advice: ${error.message}`
+      };
+    }
+  }
+
+  async askClaudeToMakePlan(args, onStreamMessage = null) {
+    const { prompt, workingDirectory } = args;
+    
+    console.log('=== CLAUDE SDK PLAN REQUEST START ===');
+    console.log('Raw args received:', JSON.stringify(args, null, 2));
+    
+    if (!prompt) {
+      console.log('ERROR: No prompt provided in args');
+      return {
+        success: false,
+        message: 'Prompt is required for Claude planning'
+      };
+    }
+
+    try {
+      console.log(`✓ Prompt validated: "${prompt}"`);
+      
+      // Calculate target directory using DEFAULT_CODE_PATH + repository name
+      let targetDirectory = workingDirectory;
+      
+      if (!targetDirectory && this.currentRepository) {
+        const baseDirectory = process.env.DEFAULT_CODE_PATH || '/Users/reed/Code';
+        const repoName = this.currentRepository.name; // Just the repo name, not full name
+        targetDirectory = `${baseDirectory}/${repoName}`;
+      }
+      
+      if (!targetDirectory) {
+        targetDirectory = process.cwd();
+      }
+      
+      console.log(`✓ Repository info:`);
+      console.log(`  - Current repo: ${this.currentRepository?.fullName || 'none'}`);
+      console.log(`  - Repo name: ${this.currentRepository?.name || 'none'}`);
+      console.log(`  - Base directory: ${process.env.DEFAULT_CODE_PATH || '/Users/reed/Code'}`);
+      console.log(`  - Target directory: ${targetDirectory}`);
+      
+      // Use Claude Code SDK to generate the plan with streaming
+      const planResult = await this.claudeCodeManager.createPlan(prompt, targetDirectory, onStreamMessage);
+      
+      console.log('✓ Claude Code SDK planning completed');
+      
+      const response = {
+        success: true,
+        message: 'Claude planning completed successfully',
+        data: {
+          prompt,
+          workingDirectory: targetDirectory,
+          repository: this.currentRepository?.fullName,
+          plan: planResult.plan,
+          responses: planResult.responses,
+          timestamp: planResult.timestamp
+        }
+      };
+      
+      console.log('✓ Response prepared with plan length:', planResult.plan.length);
+      console.log('=== CLAUDE SDK PLAN REQUEST END ===');
+      
+      return response;
+    } catch (error) {
+      console.error('❌ Failed to create Claude plan:', error);
+      console.error('Error stack:', error.stack);
+      return {
+        success: false,
+        message: `Failed to create Claude plan: ${error.message}`
       };
     }
   }
