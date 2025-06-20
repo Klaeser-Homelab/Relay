@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Code, X, Moon, Plus, MessageSquare } from 'lucide-react';
+import { Settings, Code, X, Moon, Plus, MessageSquare, Archive } from 'lucide-react';
 
 interface Chat {
   id: string;
@@ -24,6 +24,7 @@ interface SidebarProps {
   currentChatId: string | null;
   onSelectChat: (chat: Chat) => void;
   onNewChat: () => void;
+  onShowAllChats: () => void;
 }
 
 export function Sidebar({ 
@@ -39,7 +40,8 @@ export function Sidebar({
   recentChats,
   currentChatId,
   onSelectChat,
-  onNewChat
+  onNewChat,
+  onShowAllChats
 }: SidebarProps) {
   if (!isOpen) {
     return null;
@@ -91,9 +93,9 @@ export function Sidebar({
         </div>
         
         {/* Recent Chats List */}
-        <div className="space-y-1 mb-6 max-h-64 overflow-y-auto">
+        <div className="space-y-1 mb-3">
           {recentChats.length > 0 ? (
-            recentChats.map((chat) => (
+            recentChats.slice(0, 10).map((chat) => (
               <button
                 key={chat.id}
                 onClick={() => onSelectChat(chat)}
@@ -120,6 +122,20 @@ export function Sidebar({
             </div>
           )}
         </div>
+
+        {/* All Chats Button */}
+        {recentChats.length > 0 && (
+          <button
+            onClick={onShowAllChats}
+            className="w-full flex items-center space-x-2 px-3 py-2 rounded-md text-sm text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+          >
+            <Archive className="w-4 h-4 flex-shrink-0" />
+            <span>All chats</span>
+            {recentChats.length > 10 && (
+              <span className="text-xs text-gray-500">({recentChats.length})</span>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Navigation */}

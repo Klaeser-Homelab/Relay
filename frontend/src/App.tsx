@@ -13,6 +13,8 @@ import { Settings } from './components/Settings';
 import { ConversationHistory } from './components/ConversationHistory';
 import { Sidebar } from './components/Sidebar';
 import { SuggestedActions } from './components/SuggestedActions';
+import { AllChats } from './components/AllChats';
+import { ActivePlanDisplay } from './components/ActivePlanDisplay';
 import { useGitHubProjects } from './hooks/useGitHubProjects';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudioRecording } from './hooks/useAudioRecording';
@@ -34,6 +36,9 @@ function App() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [suggestedActionsVisible, setSuggestedActionsVisible] = useState(true);
   const [isUpdatingPlan, setIsUpdatingPlan] = useState(false);
+  const [isClaudeProcessing, setIsClaudeProcessing] = useState(false);
+  const [lastClaudeStreamTime, setLastClaudeStreamTime] = useState<number>(0);
+  const [showAllChats, setShowAllChats] = useState(false);
   
   const {
     projects,
@@ -60,6 +65,7 @@ function App() {
     startRecording,
     stopRecording,
     sendAudio,
+    sendTextMessage,
     selectProject: selectProjectWS,
     clearTranscriptions,
     clearFunctionResults,
@@ -68,6 +74,7 @@ function App() {
     clearClaudePlanResponses,
     clearClaudeStreamingTexts,
     clearClaudeTodoWrites,
+    resetClaudeProcessingIndex,
     socket
   } = useWebSocket();
 
@@ -110,6 +117,22 @@ function App() {
     }
   }, [claudePlanRequests, clearClaudePlanRequests]);
 
+  // Monitor Claude streaming completion to reset plan loading state
+  useEffect(() => {
+    if (isUpdatingPlan && claudeStreamingTexts.length > 0) {
+      // Check if the latest streaming text appears to be completed
+      const latestStreaming = claudeStreamingTexts[claudeStreamingTexts.length - 1];
+      
+      // Reset loading state after a brief delay to allow for complete streaming
+      const timeout = setTimeout(() => {
+        console.log('Resetting plan loading state after streaming');
+        setIsUpdatingPlan(false);
+      }, 2000);
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [claudeStreamingTexts, isUpdatingPlan]);
+
   // Log Claude plan responses
   useEffect(() => {
     console.log('=== APP: Claude plan responses changed ===');
@@ -119,6 +142,60 @@ function App() {
       console.log('✓ Latest plan response:', latest.prompt, 'Plan length:', latest.plan.length);
     }
   }, [claudePlanResponses]);
+
+  // Reset plan loading state when Claude streaming texts are received
+  useEffect(() => {
+    if (claudeStreamingTexts.length > 0 && isUpdatingPlan) {
+      console.log('Plan streaming detected - resetting loading state');
+      setIsUpdatingPlan(false);
+    }
+  }, [claudeStreamingTexts, isUpdatingPlan]);
+
+  // Track Claude processing state based on streaming activity
+  useEffect(() => {
+    if (claudeStreamingTexts.length > 0) {
+      const currentTime = Date.now();
+      setLastClaudeStreamTime(currentTime);
+      setIsClaudeProcessing(true);
+      
+      // Set a timeout to mark processing as complete if no new streams arrive
+      const timeout = setTimeout(() => {
+        // If no new streams in 3 seconds, assume processing is complete
+        if (Date.now() - lastClaudeStreamTime >= 3000) {
+          setIsClaudeProcessing(false);
+          console.log('Claude processing complete (no new streams)');
+          resetClaudeProcessingIndex(); // Reset the index when processing completes normally
+        }
+      }, 3000);
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [claudeStreamingTexts, lastClaudeStreamTime, resetClaudeProcessingIndex]);
+
+  // Handle Escape key to interrupt processing
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isClaudeProcessing) {
+        console.log('Escape key pressed - interrupting Claude processing');
+        
+        // Send interrupt signal via WebSocket
+        if (socket && connected) {
+          socket.emit('interrupt_processing');
+        }
+        
+        // Mark processing as stopped
+        setIsClaudeProcessing(false);
+        
+        // Add interrupt message to conversation
+        // This will be handled by the backend sending a message
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isClaudeProcessing, socket, connected]);
 
   // Handle quiet mode inactivity timer
   useEffect(() => {
@@ -254,6 +331,86 @@ function App() {
     }
   };
 
+  const parseLatestPlan = (comments: any[]) => {
+    if (!comments || comments.length === 0) {
+      console.log('No comments available for plan parsing');
+      return null;
+    }
+
+    try {
+      // Sort comments by creation date (newest first)
+      const sortedComments = [...comments].sort((a, b) => {
+        const dateA = new Date(a.created_at || 0).getTime();
+        const dateB = new Date(b.created_at || 0).getTime();
+        return dateB - dateA;
+      });
+
+      console.log(`Scanning ${sortedComments.length} comments for plans...`);
+
+      // Look for plan JSON in comment bodies
+      for (const comment of sortedComments) {
+        if (!comment.body || typeof comment.body !== 'string') continue;
+
+        // Look for JSON code blocks containing plans
+        const jsonMatches = comment.body.match(/```json\s*\n([\s\S]*?)\n```/g);
+        if (!jsonMatches) continue;
+
+        for (const match of jsonMatches) {
+          try {
+            // Extract JSON content from code block
+            const jsonContent = match.replace(/```json\s*\n/, '').replace(/\n```$/, '').trim();
+            
+            if (!jsonContent) continue;
+
+            const parsed = JSON.parse(jsonContent);
+            
+            // Validate plan structure
+            if (parsed.type === 'plan' && parsed.text && parsed.timestamp) {
+              console.log('Found valid plan in comment:', {
+                comment_id: comment.id,
+                timestamp: parsed.timestamp,
+                version: parsed.version || 'unknown'
+              });
+              
+              return {
+                ...parsed,
+                comment_id: comment.id,
+                comment_created_at: comment.created_at,
+                comment_author: comment.user?.login || comment.author?.login || 'unknown',
+                // Ensure required fields have defaults
+                version: parsed.version || '1.0',
+                metadata: {
+                  author: 'claude-code',
+                  issue_number: 0,
+                  repository: '',
+                  ...parsed.metadata
+                }
+              };
+            } else {
+              console.log('JSON found but not a valid plan structure:', {
+                type: parsed.type,
+                hasText: !!parsed.text,
+                hasTimestamp: !!parsed.timestamp
+              });
+            }
+          } catch (error) {
+            console.warn('Failed to parse JSON in comment:', {
+              comment_id: comment.id,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+            continue;
+          }
+        }
+      }
+
+      console.log('No valid plans found in comments');
+      return null;
+    } catch (error) {
+      console.error('Error during plan parsing:', error);
+      return null;
+    }
+  };
+
   const handleIssueClick = async (issue: any) => {
     setActiveIssue(issue);
     if (issue) {
@@ -261,11 +418,25 @@ function App() {
       
       // Fetch and scan issue comments
       if (selectedProject) {
-        const comments = await fetchIssueComments(issue.number, selectedProject.fullName);
-        if (comments.length > 0) {
-          console.log('Issue comments:', comments);
-          // Store comments in the active issue for potential use
-          setActiveIssue(prev => prev ? { ...prev, comments } : null);
+        try {
+          const comments = await fetchIssueComments(issue.number, selectedProject.fullName);
+          console.log(`Loaded ${comments.length} comments for issue #${issue.number}`);
+          
+          // Parse the latest plan from comments (even if no comments)
+          const latestPlan = parseLatestPlan(comments);
+          
+          if (latestPlan) {
+            console.log('Current plan found for issue:', latestPlan.timestamp);
+          } else {
+            console.log('No plan found for issue #' + issue.number);
+          }
+          
+          // Store comments and current plan in the active issue
+          setActiveIssue(prev => prev ? { ...prev, comments, currentPlan: latestPlan } : null);
+        } catch (error) {
+          console.error('Failed to load comments for issue:', error);
+          // Still set the issue but without comments/plan
+          setActiveIssue(prev => prev ? { ...prev, comments: [], currentPlan: null } : null);
         }
       }
       
@@ -402,6 +573,14 @@ function App() {
     setCurrentChatId(null);
     setActiveIssue(null);
     clearAllConversation();
+  };
+
+  const handleShowAllChats = () => {
+    setShowAllChats(true);
+  };
+
+  const handleBackFromAllChats = () => {
+    setShowAllChats(false);
   };
 
   // Load recent sessions on component mount
@@ -587,52 +766,88 @@ function App() {
       return;
     }
 
+    if (!connected) {
+      alert('Please connect first');
+      return;
+    }
+
     setIsUpdatingPlan(true);
     try {
-      // Create a sample plan object - in a real implementation, this would come from the current plan state
-      const planData = {
-        timestamp: new Date().toISOString(),
-        issue: `#${activeIssue.number}: ${activeIssue.title}`,
-        repository: selectedProject.fullName,
-        status: 'updated',
-        actions: [
-          'Analyze current issue requirements',
-          'Review existing codebase',
-          'Implement solution',
-          'Test changes',
-          'Submit for review'
-        ]
-      };
-
-      const response = await fetch('/api/github/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          projectName: selectedProject.fullName,
-          functionName: 'add_issue_comment',
-          args: {
-            number: activeIssue.number,
-            body: `## 📋 Plan Update\n\n\`\`\`json\n${JSON.stringify(planData, null, 2)}\n\`\`\`\n\n---\n*Plan updated by Claude Code at ${new Date().toLocaleString()}*`
-          }
-        }),
-      });
-
-      const result = await response.json();
+      // Check if this is creating a new plan or updating existing one
+      const hasExistingPlan = !!activeIssue.currentPlan;
       
-      if (result.success) {
-        console.log(`Plan updated for issue #${activeIssue.number}`);
+      let planPrompt = '';
+      
+      if (!hasExistingPlan) {
+        // Create new plan using Claude AI via WebSocket
+        console.log('Creating new plan using Claude AI via WebSocket...');
+        
+        // Build comprehensive issue information
+        let issueInfo = `**Issue #${activeIssue.number}: ${activeIssue.title}**
+
+Repository: ${selectedProject.fullName}
+URL: ${activeIssue.url || activeIssue.html_url || 'N/A'}`;
+
+        // Add labels if available
+        if (activeIssue.labels && activeIssue.labels.length > 0) {
+          issueInfo += `\nLabels: ${activeIssue.labels.join(', ')}`;
+        }
+
+        // Add issue body if available
+        if (activeIssue.body) {
+          issueInfo += `\n\n**Issue Description:**\n${activeIssue.body}`;
+        }
+
+        // Add comments if available
+        if (activeIssue.comments && activeIssue.comments.length > 0) {
+          issueInfo += `\n\n**Comments:**`;
+          activeIssue.comments.forEach((comment, index) => {
+            const author = comment.user?.login || comment.author?.login || 'Unknown';
+            const createdAt = new Date(comment.created_at).toLocaleDateString();
+            issueInfo += `\n\n--- Comment ${index + 1} by ${author} (${createdAt}) ---\n${comment.body}`;
+          });
+        }
+        
+        planPrompt = `Please create a detailed implementation plan for the following GitHub issue. I am providing you with ALL available information about this issue - you do not need to fetch any additional data.
+
+${issueInfo}
+
+---
+
+Based on the above information (which includes all available details about this issue), please provide a comprehensive implementation plan that includes:
+1. Analysis of the issue requirements
+2. Step-by-step implementation approach
+3. Technical considerations and dependencies
+4. Testing strategy
+5. Any potential risks or edge cases
+
+The plan should be practical, detailed, and actionable for a developer to follow. Do not attempt to fetch additional information about this issue as all available details have been provided above.`;
       } else {
-        console.error('Failed to update plan:', result.message);
-        alert(`Failed to update plan: ${result.message}`);
+        // Update existing plan
+        planPrompt = `Please update the implementation plan for issue #${activeIssue.number}: ${activeIssue.title} in repository ${selectedProject.fullName}. Review the existing plan and provide improvements, additional details, or address any missing aspects.`;
       }
+
+      // Send via WebSocket to trigger the conversational flow
+      console.log('Sending plan request via WebSocket...');
+      sendTextMessage(planPrompt);
+      
+      console.log('Plan request sent - streaming will begin shortly');
+      
+      // Fallback timeout to reset loading state if no streaming response
+      setTimeout(() => {
+        if (isUpdatingPlan) {
+          console.log('Fallback: Resetting plan loading state after 10 seconds');
+          setIsUpdatingPlan(false);
+        }
+      }, 10000);
+      
     } catch (error) {
-      console.error('Error updating plan:', error);
-      alert('Error updating plan');
-    } finally {
+      console.error('Error initiating plan creation:', error);
+      alert('Error initiating plan creation');
       setIsUpdatingPlan(false);
     }
+    
+    // Note: isUpdatingPlan will be reset when streaming completes or via fallback timeout
   };
 
   const handleImplement = () => {
@@ -657,6 +872,7 @@ function App() {
         currentChatId={currentChatId}
         onSelectChat={handleSelectChat}
         onNewChat={handleNewChat}
+        onShowAllChats={handleShowAllChats}
       />
 
       {/* Header - Fixed at top */}
@@ -673,7 +889,7 @@ function App() {
                   <Menu className="w-5 h-5" />
                 </button>
 
-                <div className="flex-1">
+                <div className="flex-1 flex items-center space-x-4">
                   {selectedProject ? (
                     <div>
                       <h1 className="text-2xl font-bold text-white">
@@ -685,6 +901,31 @@ function App() {
                       <h1 className="text-2xl font-bold text-white">
                         What next?
                       </h1>
+                    </div>
+                  )}
+                  
+                  {/* Active Issue Display - In Header */}
+                  {activeIssue && selectedProject && (
+                    <div className="flex items-center space-x-2 bg-gray-800 px-3 py-2 rounded-lg border border-gray-600">
+                      <span className="text-gray-300 text-sm">Working on:</span>
+                      <span className="font-mono text-blue-400 text-sm">#{activeIssue.number}</span>
+                      <span className="text-white text-sm truncate max-w-48">{activeIssue.title}</span>
+                      {activeIssue.labels && activeIssue.labels.length > 0 && (
+                        <span className="ml-2">
+                          {activeIssue.labels.slice(0, 2).map((label: string) => (
+                            <span key={label} className="inline-block bg-gray-700 text-gray-300 text-xs px-1 rounded mr-1">
+                              {label}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => setActiveIssue(null)}
+                        className="p-1 text-gray-400 hover:text-gray-200 rounded hover:bg-gray-700 transition-colors"
+                        title="Clear active issue"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -709,40 +950,36 @@ function App() {
           </div>
         </header>
 
+        {/* All Chats View */}
+        {showAllChats && (
+          <div className="fixed inset-0 z-50 bg-gray-900">
+            <AllChats
+              chats={recentChats}
+              currentChatId={currentChatId}
+              onSelectChat={(chat) => {
+                handleSelectChat(chat);
+                setShowAllChats(false);
+              }}
+              onBack={handleBackFromAllChats}
+            />
+          </div>
+        )}
+
         {/* Main Content - Account for fixed header */}
         <main className="pt-20 bg-gray-900 relative flex flex-col min-h-screen">
-          
-          {/* Active Issue Display - Top Right */}
-          {activeIssue && selectedProject && (
-            <div className="absolute top-24 right-4 z-50">
-              <div className="flex items-center space-x-2 bg-gray-800 px-3 py-2 rounded-lg border border-gray-600 shadow-lg">
-                <span className="text-gray-300 text-sm">Working on:</span>
-                <span className="font-mono text-blue-400 text-sm">#{activeIssue.number}</span>
-                <span className="text-white text-sm truncate max-w-48">{activeIssue.title}</span>
-                {activeIssue.labels && activeIssue.labels.length > 0 && (
-                  <span className="ml-2">
-                    {activeIssue.labels.slice(0, 2).map((label: string) => (
-                      <span key={label} className="inline-block bg-gray-700 text-gray-300 text-xs px-1 rounded mr-1">
-                        {label}
-                      </span>
-                    ))}
-                  </span>
-                )}
-                <button
-                  onClick={() => setActiveIssue(null)}
-                  className="p-1 text-gray-400 hover:text-gray-200 rounded hover:bg-gray-700 transition-colors"
-                  title="Clear active issue"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          )}
           
           {selectedProject ? (
             <>
               {/* Conversation Section - Scrollable with fixed height */}
               <div className="flex-1 px-4 sm:px-6 lg:px-8 py-4 overflow-y-auto" style={{height: 'calc(100vh - 240px)'}}>
+                {/* Active Plan Display */}
+                {activeIssue && (
+                  <ActivePlanDisplay 
+                    plan={activeIssue.currentPlan} 
+                    issueNumber={activeIssue.number} 
+                  />
+                )}
+                
                 <ConversationHistory
                   transcriptions={transcriptions}
                   functionResults={functionResults}
@@ -775,7 +1012,9 @@ function App() {
                 isRecording={isRecording}
                 audioLevel={audioLevel}
                 hasActiveIssue={!!activeIssue}
+                hasCurrentPlan={!!activeIssue?.currentPlan}
                 selectedProject={selectedProject}
+                isClaudeProcessing={isClaudeProcessing}
               />
             </>
           ) : (

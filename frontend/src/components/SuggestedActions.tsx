@@ -23,7 +23,9 @@ interface SuggestedActionsProps {
   isRecording: boolean;
   audioLevel?: number;
   hasActiveIssue?: boolean;
+  hasCurrentPlan?: boolean;
   selectedProject?: any;
+  isClaudeProcessing?: boolean;
 }
 
 export const SuggestedActions: React.FC<SuggestedActionsProps> = ({
@@ -37,7 +39,9 @@ export const SuggestedActions: React.FC<SuggestedActionsProps> = ({
   isRecording,
   audioLevel = 0,
   hasActiveIssue = false,
-  selectedProject
+  hasCurrentPlan = false,
+  selectedProject,
+  isClaudeProcessing = false
 }) => {
   const [showOtherPopup, setShowOtherPopup] = useState(false);
   const otherButtonRef = useRef<HTMLButtonElement>(null);
@@ -85,15 +89,15 @@ export const SuggestedActions: React.FC<SuggestedActionsProps> = ({
       action: handleOtherClick,
       likelihood: 0.1
     },
-    // Only show Update Plan when there's an active issue
+    // Only show Plan action when there's an active issue
     ...(hasActiveIssue ? [{
-      id: 'update-plan',
-      label: 'Update Plan',
+      id: 'plan-action',
+      label: hasCurrentPlan ? 'Update Plan' : 'Create Plan',
       icon: isUpdatingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />,
       variant: 'secondary' as const,
       action: onUpdatePlan,
       loading: isUpdatingPlan,
-      likelihood: 0.8
+      likelihood: hasCurrentPlan ? 0.0 : 0.8
     }] : []),
     // Only show Implement when there's an active issue
     ...(hasActiveIssue ? [{
@@ -110,7 +114,7 @@ export const SuggestedActions: React.FC<SuggestedActionsProps> = ({
       icon: getMicrophoneIcon(),
       variant: 'recording',
       action: onMicrophoneClick,
-      likelihood: 1.0
+      likelihood: isClaudeProcessing ? 0.0 : 1.0
     }
   ];
 
@@ -150,9 +154,9 @@ export const SuggestedActions: React.FC<SuggestedActionsProps> = ({
             <button
               ref={action.id === 'other' ? otherButtonRef : undefined}
               onClick={action.action}
-              disabled={action.loading}
+              disabled={action.loading || (action.id === 'microphone' && isClaudeProcessing)}
               className={getButtonStyles(action.variant, action.loading || false)}
-              title={action.label}
+              title={action.id === 'microphone' && isClaudeProcessing ? 'Claude is processing...' : action.label}
               style={
                 action.id === 'microphone' && isRecording && audioLevel > 0
                   ? {

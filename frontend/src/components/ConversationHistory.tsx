@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MessageSquare, ChevronDown, ChevronUp, X, Mic, Square } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronUp, X, Mic, Square, Copy, Check } from 'lucide-react';
 import type { TranscriptionData, FunctionResultData, ClaudePlanResponseData, ClaudeStreamingTextData, ClaudeTodoWriteData } from '../types/api';
 import { TuiMarkdown } from './TuiMarkdown';
 import { TodoWriteRenderer } from './TodoWriteRenderer';
@@ -50,6 +50,8 @@ export function ConversationHistory({
   onIssueClick
 }: ConversationHistoryProps) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isCopying, setIsCopying] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   // Debug logging
   console.log('🔍 ConversationHistory Debug:');
@@ -145,23 +147,8 @@ export function ConversationHistory({
   // Skip Claude plan responses since we're streaming progressively
   // The content is already shown via claude_streaming messages
 
-  // Sort messages chronologically by timestamp
-  // Create a rough timestamp for messages that don't have one
-  let baseTime = Date.now() - (messages.length * 1000); // Spread out by seconds
-  
-  messages.forEach((message) => {
-    if (!message.timestamp) {
-      message.timestamp = new Date(baseTime).toISOString();
-      baseTime += 1000; // Increment by 1 second
-    }
-  });
-  
-  // Sort by timestamp
-  messages.sort((a, b) => {
-    const timeA = new Date(a.timestamp || 0).getTime();
-    const timeB = new Date(b.timestamp || 0).getTime();
-    return timeA - timeB;
-  });
+  // Messages are already in chronological order from how they were added
+  // No need to sort - this preserves the correct conversation flow
 
   // Add current status if recording or processing
   if (isRecording && status?.status === 'recording') {
@@ -180,6 +167,61 @@ export function ConversationHistory({
     });
   }
 
+  const exportConversation = async () => {
+    setIsCopying(true);
+    
+    try {
+      const conversationData = {
+        conversation: messages.map((message, index) => {
+          let sender = 'system';
+          let content = message.content;
+          
+          // Determine sender based on message type
+          if (message.type === 'user') {
+            sender = 'user';
+          } else if (message.type === 'claude' || message.type === 'claude_streaming') {
+            sender = 'claude';
+          } else if (message.type === 'claude_todowrite') {
+            sender = 'claude';
+            // Format todo content
+            if (message.data?.todos) {
+              content = `TodoWrite: ${message.data.todos.map(todo => 
+                `[${todo.status === 'completed' ? 'x' : todo.status === 'in_progress' ? '.' : ' '}] ${todo.content} (${todo.priority})`
+              ).join('\n')}`;
+            }
+          } else if (message.type === 'openai') {
+            sender = 'system';
+          }
+          
+          return {
+            sequence: index + 1,
+            sender,
+            content,
+            timestamp: message.timestamp || new Date().toISOString(),
+            type: message.type
+          };
+        }),
+        metadata: {
+          project: selectedProject?.fullName || 'Unknown',
+          active_issue: activeIssue ? `#${activeIssue.number}: ${activeIssue.title}` : null,
+          exported_at: new Date().toISOString(),
+          total_messages: messages.length,
+          export_source: 'Relay Conversation History'
+        }
+      };
+      
+      const jsonString = JSON.stringify(conversationData, null, 2);
+      await navigator.clipboard.writeText(jsonString);
+      
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy conversation:', error);
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
   // Always show the conversation when a project is selected
   if (!selectedProject) {
     return null;
@@ -188,7 +230,31 @@ export function ConversationHistory({
 
   return (
     <div className="relative h-full">
-      <div className="h-full overflow-y-auto bg-gray-900 p-6 rounded-md font-mono text-sm leading-relaxed scrollbar-hide">
+      {/* Copy Button - Fixed position */}
+      {messages.length > 0 && (
+        <div className="absolute top-4 right-4 z-10">
+          <button
+            onClick={exportConversation}
+            disabled={isCopying}
+            className={`p-2 rounded-lg transition-all duration-200 ${
+              copySuccess 
+                ? 'bg-green-600 text-white' 
+                : 'bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white'
+            } border border-gray-600 shadow-lg`}
+            title="Copy conversation as JSON"
+          >
+            {isCopying ? (
+              <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+            ) : copySuccess ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <Copy className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+      )}
+      
+      <div className="h-full overflow-y-auto bg-gray-900 p-6 pr-16 rounded-md font-mono text-sm leading-relaxed scrollbar-hide">
         {messages.map((message) => (
           <div key={message.id} className="mb-4">
             <div className="flex items-start space-x-3">
@@ -238,7 +304,7 @@ export function ConversationHistory({
                 ) : (
                   <span className={
                     message.type === 'user' 
-                      ? 'text-gray-300'
+                      ? 'text-gray-400'
                       : 'text-gray-100'
                   }>
                     {message.content}

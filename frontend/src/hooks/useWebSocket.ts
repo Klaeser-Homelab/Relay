@@ -30,6 +30,7 @@ export function useWebSocket() {
   });
 
   const socketRef = useRef<Socket | null>(null);
+  const claudeProcessingStartIndexRef = useRef<number>(-1);
 
   const connect = useCallback((chatId?: string) => {
     if (socketRef.current?.connected) {
@@ -128,6 +129,12 @@ export function useWebSocket() {
     socket.on('claude_streaming_text', (data: ClaudeStreamingTextData) => {
       console.log('✓ Claude streaming text received:', data.content.substring(0, 100) + '...');
       setState(prev => {
+        // Track the start of Claude processing
+        if (claudeProcessingStartIndexRef.current === -1) {
+          claudeProcessingStartIndexRef.current = prev.claudeStreamingTexts.length;
+          console.log('📍 Claude processing started at index:', claudeProcessingStartIndexRef.current);
+        }
+        
         const newTexts = [...prev.claudeStreamingTexts, data];
         return {
           ...prev,
@@ -159,6 +166,44 @@ export function useWebSocket() {
           claudeTodoWrites: data.snapshot.claude_todo_writes || []
         }));
       }
+    });
+
+    socket.on('processing_interrupted', (data: any) => {
+      console.log('Processing interrupted:', data);
+      
+      setState(prev => {
+        let updatedClaudeTexts = prev.claudeStreamingTexts;
+        let updatedTodoWrites = prev.claudeTodoWrites;
+        
+        // Remove Claude messages that were added after processing started
+        if (claudeProcessingStartIndexRef.current !== -1) {
+          console.log('🗑️ Removing Claude messages from index:', claudeProcessingStartIndexRef.current);
+          updatedClaudeTexts = prev.claudeStreamingTexts.slice(0, claudeProcessingStartIndexRef.current);
+          
+          // Also remove any TodoWrites that were added during this session
+          // We'll keep TodoWrites that existed before the interruption
+          const interruptTime = Date.now() - 60000; // Messages from last minute are likely from this session
+          updatedTodoWrites = prev.claudeTodoWrites.filter(todo => {
+            const todoTime = new Date(todo.timestamp).getTime();
+            return todoTime < interruptTime;
+          });
+        }
+        
+        // Add only the interrupt message
+        updatedClaudeTexts = [...updatedClaudeTexts, {
+          content: 'Interrupted by user',
+          timestamp: new Date().toISOString()
+        }];
+        
+        // Reset the processing start index
+        claudeProcessingStartIndexRef.current = -1;
+        
+        return {
+          ...prev,
+          claudeStreamingTexts: updatedClaudeTexts,
+          claudeTodoWrites: updatedTodoWrites
+        };
+      });
     });
 
     socket.on('connect_error', (error) => {
@@ -206,6 +251,16 @@ export function useWebSocket() {
     }
   }, []);
 
+  const sendTextMessage = useCallback((text: string) => {
+    console.log('💬 [DEBUG] sendTextMessage called, socket connected:', socketRef.current?.connected, 'text:', text);
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('text_message', { text });
+      console.log('💬 [DEBUG] Text message sent to backend');
+    } else {
+      console.log('💬 [DEBUG] Socket not connected, text message not sent');
+    }
+  }, []);
+
   const selectProject = useCallback((projectName: string) => {
     if (socketRef.current?.connected) {
       socketRef.current.emit('select_project', { project: projectName });
@@ -240,6 +295,11 @@ export function useWebSocket() {
     setState(prev => ({ ...prev, claudeTodoWrites: [] }));
   }, []);
 
+  const resetClaudeProcessingIndex = useCallback(() => {
+    console.log('🔄 Resetting Claude processing index');
+    claudeProcessingStartIndexRef.current = -1;
+  }, []);
+
   useEffect(() => {
     return () => {
       disconnect();
@@ -253,6 +313,7 @@ export function useWebSocket() {
     startRecording,
     stopRecording,
     sendAudio,
+    sendTextMessage,
     selectProject,
     clearTranscriptions,
     clearFunctionResults,
@@ -261,6 +322,7 @@ export function useWebSocket() {
     clearClaudePlanResponses,
     clearClaudeStreamingTexts,
     clearClaudeTodoWrites,
+    resetClaudeProcessingIndex,
     socket: socketRef.current
   };
 }

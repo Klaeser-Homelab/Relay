@@ -69,6 +69,10 @@ export class VoiceSession {
       console.log('⏹️ [DEBUG] stop_recording event received');
       this.handleStopRecording();
     });
+    this.socket.on('text_message', (data) => {
+      console.log('💬 [DEBUG] text_message event received:', data);
+      this.handleTextMessage(data);
+    });
     this.socket.on('select_project', (data) => {
       console.log('📁 [DEBUG] select_project event received:', data);
       this.handleSelectProject(data);
@@ -76,6 +80,10 @@ export class VoiceSession {
     this.socket.on('test_function', (data) => {
       console.log('🧪 [DEBUG] test_function event received:', data);
       this.handleTestFunction(data);
+    });
+    this.socket.on('interrupt_processing', () => {
+      console.log('🛑 [DEBUG] interrupt_processing event received');
+      this.handleInterruptProcessing();
     });
     this.socket.on('disconnect', () => {
       console.log('🔌 [DEBUG] Socket disconnect event received');
@@ -471,6 +479,94 @@ export class VoiceSession {
     }
   }
 
+  async handleTextMessage(data) {
+    console.log('💬 [DEBUG] handleTextMessage called with:', data);
+    this.updateActivity();
+    
+    const { text } = data;
+    if (!text) {
+      console.warn('💬 [DEBUG] No text provided in text message');
+      return;
+    }
+
+    try {
+      // Send the text as a transcription first (to show user input in conversation)
+      console.log('💬 [DEBUG] Sending text as transcription to frontend:', text);
+      this.sendMessage({
+        type: 'transcription',
+        data: {
+          text: text
+        }
+      });
+      
+      // Add to conversation state
+      this.conversationState.transcriptions.push({
+        text: text,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Save transcription to database if we have a chat ID
+      if (this.chatId && this.sessionManager) {
+        this.sessionManager.addMessage(
+          this.chatId,
+          'user',
+          text,
+          { source: 'text' }
+        ).catch(error => {
+          console.error('Failed to save text message to database:', error);
+        });
+      }
+
+      // Initialize OpenAI connection if needed
+      if (!this.openaiWs || this.openaiWs.readyState !== WebSocket.OPEN) {
+        console.log('💬 [DEBUG] Initializing OpenAI connection for text message...');
+        await this.initializeOpenAIRealtime();
+        
+        // Wait a moment for connection to establish
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      if (this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN) {
+        console.log('💬 [DEBUG] Sending text message to OpenAI');
+        this.sendStatusMessage('processing', 'Processing your request...', this.currentProject);
+
+        // Create a conversation item with the text input
+        const textInputMessage = {
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: text
+              }
+            ]
+          }
+        };
+
+        this.openaiWs.send(JSON.stringify(textInputMessage));
+
+        // Request a response
+        const responseMessage = {
+          type: 'response.create',
+          response: {
+            modalities: ['text', 'audio']
+          }
+        };
+        this.openaiWs.send(JSON.stringify(responseMessage));
+        
+        console.log('💬 [DEBUG] Text message and response request sent to OpenAI');
+      } else {
+        console.error('💬 [DEBUG] OpenAI WebSocket not available for text message');
+        this.sendStatusMessage('error', 'Failed to connect to voice assistant', this.currentProject);
+      }
+    } catch (error) {
+      console.error('💬 [DEBUG] Failed to process text message:', error);
+      this.sendStatusMessage('error', `Failed to process text message: ${error.message}`, this.currentProject);
+    }
+  }
+
   async handleSelectProject(data) {
     const projectName = typeof data === 'string' ? data : data.project;
     
@@ -489,6 +585,41 @@ export class VoiceSession {
       console.error('Failed to select repository:', error);
       this.sendStatusMessage('error', `Failed to select repository: ${error.message}`, '');
     }
+  }
+
+  async handleInterruptProcessing() {
+    console.log('🛑 [DEBUG] Processing interrupt requested');
+    
+    // Interrupt Claude Code if it's running
+    if (this.githubManager && this.githubManager.claudeCodeManager) {
+      console.log('🛑 [DEBUG] Interrupting Claude Code processing');
+      this.githubManager.claudeCodeManager.interrupt();
+    }
+    
+    // Send interrupt notification to frontend
+    this.socket.emit('processing_interrupted', {
+      timestamp: new Date().toISOString()
+    });
+    
+    // Add interrupt message to conversation state
+    this.conversationState.claudeStreamingTexts.push({
+      content: 'Interrupted by user',
+      timestamp: new Date().toISOString()
+    });
+    
+    // Save interrupt message to database if we have a chat ID
+    if (this.chatId && this.sessionManager) {
+      this.sessionManager.addMessage(
+        this.chatId,
+        'system',
+        'Interrupted by user',
+        { source: 'interrupt' }
+      ).catch(error => {
+        console.error('Failed to save interrupt message to database:', error);
+      });
+    }
+    
+    this.sendStatusMessage('interrupted', 'Processing interrupted', this.currentProject);
   }
 
   handleOpenAIMessage(message) {
@@ -714,6 +845,31 @@ export class VoiceSession {
           // Handle Claude with SDK - streaming already handled, no need for final response
           console.log('=== VOICE SESSION: HANDLING CLAUDE SDK RESPONSE ===');
           console.log('Function result from GitHub manager:', JSON.stringify(result, null, 2));
+          
+          // Check if the query was interrupted
+          if (result.data?.interrupted) {
+            console.log('🛑 Claude query was interrupted - skipping normal processing');
+            
+            // Send simple interruption confirmation to OpenAI
+            const functionResult = {
+              type: 'conversation.item.create',
+              item: {
+                type: 'function_call_output',
+                call_id: callId,
+                output: JSON.stringify({ 
+                  status: 'interrupted', 
+                  message: 'Query was interrupted by user' 
+                })
+              }
+            };
+            
+            if (this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN) {
+              this.openaiWs.send(JSON.stringify(functionResult));
+              console.log('✓ Sent interruption confirmation to OpenAI');
+            }
+            
+            return; // Early return to skip normal processing
+          }
           
           // Store Claude session ID for conversation continuation
           if (result.data?.sessionId) {

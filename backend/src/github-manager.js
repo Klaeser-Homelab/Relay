@@ -439,6 +439,7 @@ export class GitHubManager {
       const issueList = issues.map(issue => ({
         number: issue.number,
         title: issue.title,
+        body: issue.body || '',
         state: issue.state,
         url: issue.html_url,
         author: issue.user.login,
