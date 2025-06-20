@@ -10,6 +10,8 @@ import * as pty from 'node-pty';
 import { VoiceSession } from './voice-session.js';
 import { GitHubManager } from './github-manager.js';
 import { GitManager } from './git-manager.js';
+import { initializeDatabase } from './database.js';
+import { sessionManager } from './session-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +45,7 @@ class VoiceServer {
     this.port = process.env.PORT || 8080;
     this.sessions = new Map();
     this.terminalSessions = new Map();
+    this.databaseInitialized = false;
     
     if (!this.openaiAPIKey) {
       throw new Error('OPENAI_API_KEY environment variable is required');
@@ -53,6 +56,21 @@ class VoiceServer {
     this.setupMiddleware();
     this.setupRoutes();
     this.setupWebSocket();
+    
+    // Initialize database
+    this.initializeDatabase();
+  }
+  
+  async initializeDatabase() {
+    try {
+      this.databaseInitialized = await initializeDatabase();
+      if (!this.databaseInitialized) {
+        console.warn('Database initialization failed - session persistence will be disabled');
+      }
+    } catch (error) {
+      console.error('Database initialization error:', error);
+      this.databaseInitialized = false;
+    }
   }
 
   setupMiddleware() {
@@ -206,6 +224,133 @@ class VoiceServer {
       }
     });
 
+    // Session management endpoints
+    api.post('/sessions', async (req, res) => {
+      try {
+        const { repositoryName, repositoryFullName, title } = req.body;
+        
+        if (!repositoryName || !repositoryFullName) {
+          return res.status(400).json({ 
+            success: false, 
+            error: 'Repository name and full name are required' 
+          });
+        }
+
+        const session = await sessionManager.createSession(
+          repositoryName, 
+          repositoryFullName,
+          title
+        );
+
+        res.json({
+          success: true,
+          session: session
+        });
+      } catch (error) {
+        console.error('Failed to create session:', error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
+
+    api.get('/sessions', async (req, res) => {
+      try {
+        const { repository } = req.query;
+        const sessions = await sessionManager.listSessions(repository);
+        
+        res.json({
+          success: true,
+          sessions: sessions
+        });
+      } catch (error) {
+        console.error('Failed to list sessions:', error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
+
+    api.get('/sessions/:id', async (req, res) => {
+      try {
+        const session = await sessionManager.getSession(req.params.id);
+        
+        if (!session) {
+          return res.status(404).json({ 
+            success: false, 
+            error: 'Session not found' 
+          });
+        }
+
+        res.json({
+          success: true,
+          session: session
+        });
+      } catch (error) {
+        console.error('Failed to get session:', error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
+
+    api.put('/sessions/:id', async (req, res) => {
+      try {
+        const session = await sessionManager.updateSession(
+          req.params.id,
+          req.body
+        );
+
+        res.json({
+          success: true,
+          session: session
+        });
+      } catch (error) {
+        console.error('Failed to update session:', error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
+
+    api.post('/sessions/:id/resume', async (req, res) => {
+      try {
+        const sessionData = await sessionManager.resumeSession(req.params.id);
+        
+        res.json({
+          success: true,
+          ...sessionData
+        });
+      } catch (error) {
+        console.error('Failed to resume session:', error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
+
+    api.delete('/sessions/:id', async (req, res) => {
+      try {
+        const deleted = await sessionManager.deleteSession(req.params.id);
+        
+        res.json({
+          success: deleted,
+          message: deleted ? 'Session deleted' : 'Session not found'
+        });
+      } catch (error) {
+        console.error('Failed to delete session:', error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
+
     // Save plan as GitHub issue
     api.post('/plans/save-as-issue', async (req, res) => {
       try {
@@ -270,6 +415,8 @@ class VoiceServer {
         if (this.sessions.has(sessionId)) {
           this.sessions.get(sessionId).close();
           this.sessions.delete(sessionId);
+          // Remove session association
+          sessionManager.removeActiveSession(sessionId);
         }
         if (this.terminalSessions.has(sessionId)) {
           const terminalSession = this.terminalSessions.get(sessionId);
@@ -280,18 +427,28 @@ class VoiceServer {
         }
       });
 
-      // Handle voice session initialization
-      socket.on('voice_session', () => {
+      // Handle voice session initialization with optional chat ID
+      socket.on('voice_session', async (data) => {
         console.log('🎙️ [DEBUG] Voice session requested for session:', sessionId);
+        const chatId = data?.chatId || null;
+        
         const session = new VoiceSession(
           sessionId,
           socket,
           this.openaiAPIKey,
-          this.githubManager
+          this.githubManager,
+          sessionManager,
+          chatId
         );
         this.sessions.set(sessionId, session);
+        
+        // Associate the socket session with the chat if provided
+        if (chatId) {
+          sessionManager.setActiveSession(sessionId, chatId);
+        }
+        
         console.log('🎙️ [DEBUG] Voice session created, starting...');
-        session.start();
+        await session.start();
       });
 
       // Handle terminal session initialization

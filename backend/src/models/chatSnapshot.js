@@ -40,6 +40,11 @@ export function initChatSnapshotModel(sequelize) {
       type: DataTypes.JSONB,
       allowNull: true,
       comment: 'Snapshot of repository issues array'
+    },
+    claude_session_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Claude Code SDK session ID for conversation continuation'
     }
   }, {
     tableName: 'chat_snapshots',

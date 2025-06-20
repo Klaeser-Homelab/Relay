@@ -31,7 +31,7 @@ export function useWebSocket() {
 
   const socketRef = useRef<Socket | null>(null);
 
-  const connect = useCallback(() => {
+  const connect = useCallback((chatId?: string) => {
     if (socketRef.current?.connected) {
       return;
     }
@@ -45,9 +45,9 @@ export function useWebSocket() {
       console.log('🔌 [DEBUG] WebSocket connected, initializing voice session...');
       setState(prev => ({ ...prev, connected: true, socket }));
       
-      // Initialize voice session on connection
-      socket.emit('voice_session');
-      console.log('🔌 [DEBUG] voice_session event sent to backend');
+      // Initialize voice session on connection with optional chat ID
+      socket.emit('voice_session', { chatId });
+      console.log('🔌 [DEBUG] voice_session event sent to backend with chatId:', chatId);
     });
 
     socket.on('disconnect', () => {
@@ -145,6 +145,20 @@ export function useWebSocket() {
           claudeTodoWrites: newTodoWrites
         };
       });
+    });
+
+    socket.on('session_resumed', (data: any) => {
+      console.log('Session resumed:', data);
+      // Restore conversation state from the resumed session
+      if (data.snapshot) {
+        setState(prev => ({
+          ...prev,
+          transcriptions: data.snapshot.transcriptions || [],
+          functionResults: data.snapshot.function_results || [],
+          claudeStreamingTexts: data.snapshot.claude_streaming_texts || [],
+          claudeTodoWrites: data.snapshot.claude_todo_writes || []
+        }));
+      }
     });
 
     socket.on('connect_error', (error) => {

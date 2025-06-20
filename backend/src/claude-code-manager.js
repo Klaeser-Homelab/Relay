@@ -9,7 +9,7 @@ export class ClaudeCodeManager {
     }
   }
 
-  async createPlan(prompt, workingDirectory, onStreamMessage = null) {
+  async createPlan(prompt, workingDirectory, onStreamMessage = null, claudeSessionId = null) {
     if (!this.apiKey) {
       throw new Error('ANTHROPIC_API_KEY is required for Claude Code functionality');
     }
@@ -18,7 +18,7 @@ export class ClaudeCodeManager {
       throw new Error('Prompt is required for planning');
     }
 
-    console.log('=== CLAUDE CODE: Starting planning session ===');
+    console.log('=== CLAUDE CODE: Starting session ===');
     console.log('Prompt:', prompt);
     console.log('Working directory:', workingDirectory);
 
@@ -26,14 +26,35 @@ export class ClaudeCodeManager {
       const responses = [];
       let fullResponse = '';
       let todos = [];
+      let sessionId = claudeSessionId; // Track session ID
 
       // Use Claude Code SDK with specified working directory
+      const enhancedPrompt = claudeSessionId ? 
+        prompt : // For continuation, use prompt as-is
+        `${prompt}
+
+IMPORTANT: Please break down your response into clear, actionable steps using the TodoWrite tool. This helps provide real-time feedback on your progress. Create todos for major steps in your analysis, planning, or implementation approach.
+
+Use the TodoWrite tool to:
+1. Show your thinking process
+2. Break complex tasks into manageable steps  
+3. Track progress through the implementation
+4. Provide clear milestones
+
+Provide comprehensive, detailed responses with specific examples and best practices.`;
+
       const queryOptions = {
-        prompt: `${prompt}\n\nPlease provide a comprehensive, detailed plan immediately. Do not say you will examine the codebase first - just provide the complete authentication implementation plan now with specific steps, code examples, and best practices.`,
+        prompt: enhancedPrompt,
         options: {
-          maxTurns: 10 // Allow multiple turns for complete planning
+          maxTurns: 10 // Allow multiple turns for complete interaction
         }
       };
+      
+      // Add session continuation if we have a previous session
+      if (claudeSessionId) {
+        console.log(`✓ Continuing conversation with session ID: ${claudeSessionId}`);
+        queryOptions.options.resume = claudeSessionId;
+      }
 
       // Set working directory if provided
       if (workingDirectory) {
@@ -46,6 +67,12 @@ export class ClaudeCodeManager {
       for await (const message of query(queryOptions)) {
         console.log('✓ Received Claude Code message:', JSON.stringify(message, null, 2));
         
+        // Capture session ID for conversation continuation
+        if (message.session_id && !sessionId) {
+          sessionId = message.session_id;
+          console.log(`✓ Captured session ID: ${sessionId}`);
+        }
+        
         if (message.type === 'text') {
           // Handle direct text responses
           console.log('✓ Text content received:', message.content);
@@ -55,6 +82,15 @@ export class ClaudeCodeManager {
             content: message.content,
             timestamp: new Date().toISOString()
           });
+          
+          // Stream text content immediately
+          if (onStreamMessage) {
+            onStreamMessage({
+              type: 'claude_text',
+              content: message.content,
+              timestamp: new Date().toISOString()
+            });
+          }
         } else if (message.type === 'assistant' && message.message?.content) {
           // Handle assistant messages with content array
           const assistantContent = message.message.content
@@ -115,7 +151,32 @@ export class ClaudeCodeManager {
           throw new Error(`Claude Code error: ${message.content || message.error}`);
         } else {
           console.log('✓ Other message type:', message.type);
-          // Don't log full message to reduce noise, just track the type
+          
+          // Check for TodoWrite tool calls in any other message types
+          if (message.content || message.message) {
+            const messageContent = message.content || message.message;
+            if (Array.isArray(messageContent)) {
+              const toolUses = messageContent.filter(item => item.type === 'tool_use');
+              for (const toolUse of toolUses) {
+                if (toolUse.name === 'TodoWrite' && toolUse.input?.todos) {
+                  console.log('✓ Found todos in other message type:', toolUse.input.todos.length, 'items');
+                  todos = todos.concat(toolUse.input.todos);
+                  
+                  // Stream TodoWrite tool call immediately
+                  if (onStreamMessage) {
+                    console.log('✓ Streaming TodoWrite from other message type');
+                    onStreamMessage({
+                      type: 'claude_todowrite',
+                      content: {
+                        todos: toolUse.input.todos
+                      },
+                      timestamp: new Date().toISOString()
+                    });
+                  }
+                }
+              }
+            }
+          }
         }
       }
 
@@ -143,7 +204,7 @@ export class ClaudeCodeManager {
         console.log('✓ Added', finalTodos.length, 'unique todos to plan');
       }
 
-      console.log('✓ Claude Code planning session completed');
+      console.log('✓ Claude Code session completed');
       console.log('Total response length:', formattedPlan.length);
 
       return {
@@ -152,6 +213,7 @@ export class ClaudeCodeManager {
         responses,
         todos,
         workingDirectory,
+        sessionId, // Include session ID for continuation
         timestamp: new Date().toISOString()
       };
 

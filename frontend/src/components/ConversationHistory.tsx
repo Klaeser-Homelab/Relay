@@ -187,11 +187,11 @@ export function ConversationHistory({
 
 
   return (
-    <div className="relative">
-      <div className="max-h-96 overflow-y-auto bg-gray-900 p-3 rounded-md font-mono text-xs leading-tight">
+    <div className="relative h-full">
+      <div className="h-full overflow-y-auto bg-gray-900 p-6 rounded-md font-mono text-sm leading-relaxed scrollbar-hide">
         {messages.map((message) => (
-          <div key={message.id} className="mb-1">
-            <div className="flex items-start space-x-2">
+          <div key={message.id} className="mb-4">
+            <div className="flex items-start space-x-3">
               <span className={
                 message.type === 'user' 
                   ? 'text-gray-400 flex-shrink-0'
@@ -213,19 +213,19 @@ export function ConversationHistory({
                 ) : message.id === 'issues-list' && message.data?.issues ? (
                   <div>
                     <span className="text-gray-100 block mb-2">{message.content}</span>
-                    <div className="space-y-1">
+                    <div className="space-y-3">
                       {message.data.issues.map((issue: any) => (
                         <button
                           key={issue.number}
                           onClick={() => onIssueClick(issue)}
-                          className="w-full text-left px-2 py-1 rounded text-xs bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-600 transition-colors"
+                          className="w-full text-left px-4 py-3 rounded-lg text-sm bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-600 transition-colors"
                         >
                           <span className="font-mono text-blue-400">#{issue.number}</span>{' '}
                           <span className="truncate">{issue.title}</span>
                           {issue.labels.length > 0 && (
                             <span className="ml-2">
                               {issue.labels.slice(0, 3).map((label: string) => (
-                                <span key={label} className="inline-block bg-gray-700 text-gray-300 text-xs px-1 rounded mr-1">
+                                <span key={label} className="inline-block bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded mr-2">
                                   {label}
                                 </span>
                               ))}

@@ -130,27 +130,25 @@ dev-teardown: ## Tear down development environment
 # Environment file template
 env-template: ## Create .env template file
 	@echo "Creating .env template..."
-	@cat > .env.template << 'EOF'
-# Development Environment Variables
-DATABASE_URL=postgresql://relay_user:relay_dev_password@localhost:5432/relay_dev
-
-# Production Environment Variables (required for production)
-POSTGRES_PASSWORD=your_secure_password_here
-POSTGRES_DB=relay
-POSTGRES_USER=relay_user
-POSTGRES_PORT=5432
-
-# Application Environment Variables
-OPENAI_API_KEY=your_openai_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-GEMINI_API_KEY=your_gemini_api_key_here
-GH_TOKEN=your_github_token_here
-DEFAULT_CODE_PATH=/Users/your_username/Code
-
-# Node Environment
-NODE_ENV=development
-PORT=8080
-EOF
+	@echo "# Development Environment Variables" > .env.template
+	@echo "DATABASE_URL=postgresql://relay_user:relay_dev_password@localhost:5432/relay_dev" >> .env.template
+	@echo "" >> .env.template
+	@echo "# Production Environment Variables (required for production)" >> .env.template
+	@echo "POSTGRES_PASSWORD=your_secure_password_here" >> .env.template
+	@echo "POSTGRES_DB=relay" >> .env.template
+	@echo "POSTGRES_USER=relay_user" >> .env.template
+	@echo "POSTGRES_PORT=5432" >> .env.template
+	@echo "" >> .env.template
+	@echo "# Application Environment Variables" >> .env.template
+	@echo "OPENAI_API_KEY=your_openai_api_key_here" >> .env.template
+	@echo "ANTHROPIC_API_KEY=your_anthropic_api_key_here" >> .env.template
+	@echo "GEMINI_API_KEY=your_gemini_api_key_here" >> .env.template
+	@echo "GH_TOKEN=your_github_token_here" >> .env.template
+	@echo "DEFAULT_CODE_PATH=/Users/your_username/Code" >> .env.template
+	@echo "" >> .env.template
+	@echo "# Node Environment" >> .env.template
+	@echo "NODE_ENV=development" >> .env.template
+	@echo "PORT=8080" >> .env.template
 	@echo ".env template created! Copy to .env and fill in your values."
 
 # Status check

@@ -15,6 +15,7 @@ import { Sidebar } from './components/Sidebar';
 import { useGitHubProjects } from './hooks/useGitHubProjects';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudioRecording } from './hooks/useAudioRecording';
+import { sessionApi } from './services/sessionApi';
 
 function App() {
   const [developerMode, setDeveloperMode] = useState(false);
@@ -174,33 +175,85 @@ function App() {
 
   const handleSelectProject = async (project: any) => {
     const success = await selectProject(project);
-    if (success && connected) {
-      selectProjectWS(project.name);
-    }
     if (success) {
-      // Fetch issues for the selected project
-      fetchRepositoryIssues(project.fullName);
-      // Clear active issue when switching projects
-      setActiveIssue(null);
-      
-      // Create or find existing chat for this project
-      const existingChat = recentChats.find(chat => chat.repository_full_name === project.fullName);
-      if (existingChat) {
-        setCurrentChatId(existingChat.id);
-      } else {
-        // Create new chat for this project
-        await createNewChat(project.fullName, project.name);
+      try {
+        // Create new session in database
+        const session = await sessionApi.createSession(
+          project.name,
+          project.fullName,
+          `${project.name} - ${new Date().toLocaleDateString()}`
+        );
+        
+        setCurrentChatId(session.id);
+        
+        // Connect WebSocket with the new session ID
+        if (!connected) {
+          connect(session.id);
+        } else {
+          // Disconnect and reconnect with new session
+          disconnect();
+          setTimeout(() => connect(session.id), 100);
+        }
+        
+        // Update the WebSocket project selection
+        if (connected) {
+          selectProjectWS(project.name);
+        }
+        
+        // Fetch issues for the selected project
+        fetchRepositoryIssues(project.fullName);
+        // Clear active issue when switching projects
+        setActiveIssue(null);
+        
+        // Load recent sessions for this project
+        const sessions = await sessionApi.listSessions(project.fullName);
+        setRecentChats(sessions);
+      } catch (error) {
+        console.error('Failed to create session:', error);
+        // Fall back to non-persistent mode
+        if (!connected) {
+          connect();
+        }
+        if (connected) {
+          selectProjectWS(project.name);
+        }
       }
     }
     return success;
   };
 
-  const handleIssueClick = (issue: any) => {
+  const handleIssueClick = async (issue: any) => {
     setActiveIssue(issue);
     if (issue) {
       console.log(`Active issue set to #${issue.number}: ${issue.title}`);
+      
+      // Update the session with the active issue
+      if (currentChatId) {
+        try {
+          await sessionApi.updateSession(currentChatId, {
+            active_issue_number: issue.number,
+            active_issue_title: issue.title,
+            active_issue_url: issue.url || issue.html_url
+          });
+        } catch (error) {
+          console.error('Failed to update session with active issue:', error);
+        }
+      }
     } else {
       console.log('Active issue cleared');
+      
+      // Clear the active issue from the session
+      if (currentChatId) {
+        try {
+          await sessionApi.updateSession(currentChatId, {
+            active_issue_number: null,
+            active_issue_title: null,
+            active_issue_url: null
+          });
+        } catch (error) {
+          console.error('Failed to clear active issue from session:', error);
+        }
+      }
     }
   };
 
@@ -242,13 +295,40 @@ function App() {
     setInactivityTimer(newTimer);
   };
 
-  const handleSelectChat = (chat: any) => {
-    setCurrentChatId(chat.id);
-    // TODO: Load chat history and set project
-    // For now, just select the project associated with the chat
-    const project = projects.find(p => p.fullName === chat.repository_full_name);
-    if (project) {
-      handleSelectProject(project);
+  const handleSelectChat = async (chat: any) => {
+    try {
+      // Resume the session
+      const sessionData = await sessionApi.resumeSession(chat.id);
+      
+      setCurrentChatId(chat.id);
+      
+      // Select the project associated with the chat
+      const project = projects.find(p => p.fullName === chat.repository_full_name);
+      if (project) {
+        await selectProject(project);
+        
+        // Reconnect with the resumed session ID
+        if (!connected) {
+          connect(chat.id);
+        } else {
+          disconnect();
+          setTimeout(() => connect(chat.id), 100);
+        }
+        
+        // Restore active issue if any
+        if (sessionData.chat.active_issue_number) {
+          setActiveIssue({
+            number: sessionData.chat.active_issue_number,
+            title: sessionData.chat.active_issue_title,
+            url: sessionData.chat.active_issue_url
+          });
+        }
+        
+        // Fetch issues for the project
+        fetchRepositoryIssues(project.fullName);
+      }
+    } catch (error) {
+      console.error('Failed to resume session:', error);
     }
   };
 
@@ -281,21 +361,24 @@ function App() {
     clearAllConversation();
   };
 
-  const createNewChat = async (repositoryFullName: string, repositoryName: string) => {
-    // TODO: API call to create new chat in database
-    const newChat = {
-      id: Date.now().toString(), // Temporary ID generation
-      title: `${repositoryName} - ${new Date().toLocaleDateString()}`,
-      repository_name: repositoryName,
-      repository_full_name: repositoryFullName,
-      updated_at: new Date().toISOString(),
-      last_accessed_at: new Date().toISOString()
-    };
-    
-    setRecentChats(prev => [newChat, ...prev.slice(0, 19)]); // Keep last 20 chats
-    setCurrentChatId(newChat.id);
-    
-    return newChat;
+  // Load recent sessions on component mount
+  useEffect(() => {
+    loadRecentSessions();
+  }, []);
+  
+  const loadRecentSessions = async () => {
+    try {
+      const sessions = await sessionApi.listSessions();
+      setRecentChats(sessions);
+      
+      // Auto-resume last session if available
+      if (sessions.length > 0 && !currentChatId) {
+        const lastSession = sessions[0];
+        await handleSelectChat(lastSession);
+      }
+    } catch (error) {
+      console.error('Failed to load recent sessions:', error);
+    }
   };
 
   const handleStartRecording = () => {
@@ -312,9 +395,11 @@ function App() {
     stopAudioRecording();
   };
 
-  const handleMicrophoneClick = () => {
+  const handleMicrophoneClick = async () => {
     if (!connected) {
-      connect();
+      // If we have a current chat ID, connect with it
+      // Otherwise, connect without a session (will need to select project first)
+      connect(currentChatId || undefined);
     } else if (isRecording) {
       handleStopRecording();
     } else {
@@ -453,7 +538,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-800 flex">
+    <div className="min-h-screen bg-gray-800">
       {/* Sidebar */}
       <Sidebar 
         developerMode={developerMode}
@@ -471,10 +556,8 @@ function App() {
         onNewChat={handleNewChat}
       />
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <header className="p-4 bg-gray-900 border-b border-gray-700">
+      {/* Header - Fixed at top */}
+      <header className="fixed top-0 left-0 right-0 z-40 p-4 bg-gray-900 border-b border-gray-700">
           <div className="">
             <div className="flex justify-between items-center">
             <div className="flex items-center space-x-4">
@@ -533,8 +616,8 @@ function App() {
           </div>
         </header>
 
-        {/* Main Content */}
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8 bg-gray-900 relative">
+        {/* Main Content - Account for fixed header */}
+        <main className="pt-20 bg-gray-900 relative flex flex-col min-h-screen">
           
           {/* Active Issue Display - Top Right */}
           {activeIssue && selectedProject && (
@@ -563,10 +646,10 @@ function App() {
             </div>
           )}
           
-          <div className="max-w-7xl mx-auto">
-            {selectedProject ? (
-              <div className="space-y-8">
-                {/* Conversation Section */}
+          {selectedProject ? (
+            <>
+              {/* Conversation Section - Scrollable with fixed height */}
+              <div className="flex-1 px-4 sm:px-6 lg:px-8 py-4 overflow-y-auto" style={{height: 'calc(100vh - 240px)'}}>
                 <ConversationHistory
                   transcriptions={transcriptions}
                   functionResults={functionResults}
@@ -585,78 +668,87 @@ function App() {
                   onStopRecording={handleStopRecording}
                   onIssueClick={handleIssueClick}
                 />
+              </div>
 
-                {/* Large Centered Microphone */}
-                <div className="flex justify-center">
-                  <div className="flex flex-col items-center space-y-6">
-                    <button
-                      onClick={handleMicrophoneClick}
-                      className={`w-36 h-36 rounded-full border-4 transition-all duration-200 flex items-center justify-center ${
-                        !connected
-                          ? 'bg-blue-500 border-blue-600 text-white hover:bg-blue-600 shadow-lg'
-                          : isRecording
-                          ? 'bg-red-500 border-red-600 text-white shadow-lg transform scale-110'
-                          : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600 hover:border-gray-500'
-                      }`}
-                      title={
-                        !connected 
-                          ? 'Connect to Voice Assistant' 
-                          : isRecording 
-                          ? 'Stop Recording' 
-                          : 'Start Recording'
+              {/* Recording Button - Absolutely positioned at bottom */}
+              <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-30">
+                <div className="flex flex-col items-center space-y-4">
+                  <button
+                    onClick={handleMicrophoneClick}
+                    className={`w-32 h-32 rounded-full border-4 transition-all duration-200 flex items-center justify-center ${
+                      !connected
+                        ? 'bg-blue-500 border-blue-600 text-white hover:bg-blue-600 shadow-lg'
+                        : isRecording
+                        ? 'bg-red-500 border-red-600 text-white shadow-lg transform scale-110'
+                        : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600 hover:border-gray-500'
+                    }`}
+                    title={
+                      !connected 
+                        ? 'Connect to Voice Assistant' 
+                        : isRecording 
+                        ? 'Stop Recording' 
+                        : 'Start Recording'
+                    }
+                  >
+                    {!connected ? (
+                      <Mic className="w-14 h-14" />
+                    ) : isRecording ? (
+                      <Square className="w-10 h-10" />
+                    ) : (
+                      <Mic className="w-14 h-14" />
+                    )}
+
+                    {/* Audio Level Ring */}
+                    {isRecording && audioLevel > 0 && (
+                      <div
+                        className="absolute inset-0 rounded-full border-4 border-red-400 animate-pulse"
+                        style={{
+                          transform: `scale(${1 + audioLevel * 0.3})`,
+                          opacity: 0.6
+                        }}
+                      />
+                    )}
+                  </button>
+                  
+                  <div className="text-center">
+                    <p className="text-gray-400 text-sm">
+                      {!connected 
+                        ? 'Click to start recording' 
+                        : isRecording 
+                        ? 'Listening...' 
+                        : 'Click to start recording'
                       }
-                    >
-                      {!connected ? (
-                        <Mic className="w-16 h-16" />
-                      ) : isRecording ? (
-                        <Square className="w-12 h-12" />
-                      ) : (
-                        <Mic className="w-16 h-16" />
-                      )}
-
-                      {/* Audio Level Ring */}
-                      {isRecording && audioLevel > 0 && (
-                        <div
-                          className="absolute inset-0 rounded-full border-4 border-red-400 animate-pulse"
-                          style={{
-                            transform: `scale(${1 + audioLevel * 0.3})`,
-                            opacity: 0.6
-                          }}
-                        />
-                      )}
-                    </button>
-                    
-                    <div className="text-center">
-                      <p className="text-gray-300 text-lg">
-                        {!connected 
-                          ? 'Click to connect and start voice control' 
-                          : isRecording 
-                          ? 'Listening...' 
-                          : 'Click to start recording'
-                        }
-                      </p>
-                    </div>
+                    </p>
                   </div>
                 </div>
               </div>
-            ) : (
-              // Show project selector when no project is selected
-              <ProjectSelector
-                projects={projects}
-                selectedProject={selectedProject}
-                loading={projectsLoading}
-                error={projectsError}
-                onSelectProject={handleSelectProject}
-                onRefresh={fetchProjects}
-                onCloneRepository={handleCloneRepository}
-              />
-            )}
+            </>
+          ) : (
+            // Show project selector when no project is selected
+            <div className="flex-1 px-4 sm:px-6 lg:px-8 py-8">
+              <div className="max-w-7xl mx-auto">
+                <ProjectSelector
+                  projects={projects}
+                  selectedProject={selectedProject}
+                  loading={projectsLoading}
+                  error={projectsError}
+                  onSelectProject={handleSelectProject}
+                  onRefresh={fetchProjects}
+                  onCloneRepository={handleCloneRepository}
+                />
+              </div>
+            </div>
+          )}
 
-            {/* Developer Mode */}
-            {developerMode && selectedProject && (
-              <div className="mt-8 space-y-4">
-                {/* Developer Mode Status */}
-                <div className="flex items-center space-x-4 bg-gray-800 px-4 py-3 rounded-lg border border-gray-600">
+        </main>
+
+        {/* Developer/Debug Section - Only show if developer mode or there's additional data */}
+        {(developerMode || geminiAdvice.length > 0 || claudePlanResponses.length > 0) && selectedProject && (
+          <div className="bg-gray-900 px-4 py-6">
+            <div className="max-w-7xl mx-auto">
+              {/* Developer Mode Status */}
+              {developerMode && (
+                <div className="flex items-center space-x-4 bg-gray-800 px-4 py-3 rounded-lg border border-gray-600 mb-6">
                   {/* Connection Status */}
                   <div className="flex items-center space-x-2">
                     {connected ? (
@@ -687,55 +779,54 @@ function App() {
                     )}
                   </div>
                 </div>
+              )}
 
-                <DeveloperMode 
-                  selectedProject={selectedProject?.name || null} 
-                  socket={socket}
-                  connected={connected}
-                />
+              <div className={`grid gap-8 ${geminiAdvice.length > 0 || claudePlanResponses.length > 0 ? 'grid-cols-1 xl:grid-cols-3' : 'grid-cols-1 lg:grid-cols-2'}`}>
+                {/* Developer Mode */}
+                {developerMode && (
+                  <DeveloperMode 
+                    selectedProject={selectedProject?.name || null} 
+                    socket={socket}
+                    connected={connected}
+                  />
+                )}
+
+                {/* Claude Plans - Show if there are plans */}
+                {claudePlanResponses.length > 0 && (
+                  <ClaudePlan
+                    plans={claudePlanResponses}
+                    onClear={clearClaudePlanResponses}
+                    onSavePlan={handleSavePlan}
+                  />
+                )}
+
+                {/* Transcriptions - Developer Debug */}
+                {developerMode && (
+                  <TranscriptionView
+                    transcriptions={transcriptions}
+                    onClear={clearTranscriptions}
+                  />
+                )}
+
+                {/* Function Results - Developer Debug */}
+                {developerMode && (
+                  <FunctionResults
+                    results={functionResults}
+                    onClear={clearFunctionResults}
+                  />
+                )}
+
+                {/* Gemini Advice - Only show if there's advice */}
+                {geminiAdvice.length > 0 && (
+                  <GeminiAdvice
+                    advice={geminiAdvice}
+                    onClear={clearGeminiAdvice}
+                  />
+                )}
               </div>
-            )}
-          </div>
-
-          {/* Developer/Debug Section - Only show if developer mode or there's additional data */}
-          {(developerMode || geminiAdvice.length > 0 || claudePlanResponses.length > 0) && (
-            <div className={`mt-8 grid gap-8 ${geminiAdvice.length > 0 || claudePlanResponses.length > 0 ? 'grid-cols-1 xl:grid-cols-3' : 'grid-cols-1 lg:grid-cols-2'}`}>
-              {/* Claude Plans - Show if there are plans */}
-              {claudePlanResponses.length > 0 && (
-                <ClaudePlan
-                  plans={claudePlanResponses}
-                  onClear={clearClaudePlanResponses}
-                  onSavePlan={handleSavePlan}
-                />
-              )}
-
-              {/* Transcriptions - Developer Debug */}
-              {developerMode && (
-                <TranscriptionView
-                  transcriptions={transcriptions}
-                  onClear={clearTranscriptions}
-                />
-              )}
-
-              {/* Function Results - Developer Debug */}
-              {developerMode && (
-                <FunctionResults
-                  results={functionResults}
-                  onClear={clearFunctionResults}
-                />
-              )}
-
-              {/* Gemini Advice - Only show if there's advice */}
-              {geminiAdvice.length > 0 && (
-                <GeminiAdvice
-                  advice={geminiAdvice}
-                  onClear={clearGeminiAdvice}
-                />
-              )}
             </div>
-          )}
-        </main>
-      </div>
+          </div>
+        )}
 
       {/* Terminal Modal */}
       {showTerminal && (
@@ -768,10 +859,10 @@ function App() {
           </div>
           
           {/* Preserve microphone button access */}
-          <div className="absolute bottom-8 right-8">
+          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-60">
             <button
               onClick={handleMicrophoneClick}
-              className={`w-36 h-36 rounded-full border-4 transition-all duration-200 flex items-center justify-center ${
+              className={`w-32 h-32 rounded-full border-4 transition-all duration-200 flex items-center justify-center ${
                 !connected
                   ? 'bg-blue-500 border-blue-600 text-white hover:bg-blue-600 shadow-lg'
                   : isRecording
@@ -787,11 +878,11 @@ function App() {
               }
             >
               {!connected ? (
-                <Mic className="w-16 h-16" />
+                <Mic className="w-14 h-14" />
               ) : isRecording ? (
-                <Square className="w-12 h-12" />
+                <Square className="w-10 h-10" />
               ) : (
-                <Mic className="w-16 h-16" />
+                <Mic className="w-14 h-14" />
               )}
 
               {/* Audio Level Ring */}

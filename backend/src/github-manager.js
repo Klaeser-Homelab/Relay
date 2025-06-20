@@ -178,10 +178,11 @@ export class GitHubManager {
         return await this.createPullRequest(args);
       case 'list_pull_requests':
         return await this.listPullRequests(args);
-      case 'get_implementation_advice':
-        return await this.getImplementationAdvice(args);
-      case 'ask_claude_to_make_plan':
-        return await this.askClaudeToMakePlan(args, onStreamMessage);
+      // COMMENTED OUT: Gemini implementation advice
+      // case 'get_implementation_advice':
+      //   return await this.getImplementationAdvice(args);
+      case 'ask_claude':
+        return await this.askClaude(args, onStreamMessage);
       default:
         return {
           success: false,
@@ -566,93 +567,94 @@ export class GitHubManager {
     }
   }
 
-  async getImplementationAdvice(args) {
-    if (!this.genAI) {
-      return {
-        success: false,
-        message: 'Gemini API key not configured. Set GEMINI_API_KEY environment variable.'
-      };
-    }
+  // COMMENTED OUT: Gemini implementation advice - keeping for potential future use
+  // async getImplementationAdvice(args) {
+  //   if (!this.genAI) {
+  //     return {
+  //       success: false,
+  //       message: 'Gemini API key not configured. Set GEMINI_API_KEY environment variable.'
+  //     };
+  //   }
+  //
+  //   if (!this.currentRepository) {
+  //     return {
+  //       success: false,
+  //       message: 'No repository selected'
+  //     };
+  //   }
+  //
+  //   const { question, context } = args;
+  //   
+  //   if (!question) {
+  //     return {
+  //       success: false,
+  //       message: 'Question is required for implementation advice'
+  //     };
+  //   }
+  //
+  //   try {
+  //     console.log(`Getting implementation advice for: ${question}`);
+  //     
+  //     // Get repository context
+  //     const repoInfo = await this.getRepositoryInfo();
+  //     const recentIssues = await this.listIssues({ limit: 5 });
+  //     const recentCommits = await this.listCommits({ limit: 5 });
+  //
+  //     // Build context for Gemini
+  //     let prompt = `You are a senior software engineer providing implementation advice for a GitHub repository.
+  //
+  // Repository: ${this.currentRepository.fullName}
+  // Description: ${repoInfo.data?.description || 'No description available'}
+  // Language: ${repoInfo.data?.language || 'Unknown'}
+  //
+  // Recent Issues:
+  // ${recentIssues.success ? recentIssues.data.issues.map(issue => `- #${issue.number}: ${issue.title}`).join('\n') : 'No recent issues'}
+  //
+  // Recent Commits:
+  // ${recentCommits.success ? recentCommits.data.commits.map(commit => `- ${commit.sha}: ${commit.message}`).join('\n') : 'No recent commits'}
+  //
+  // Question: ${question}
+  //
+  // ${context ? `Additional Context: ${context}` : ''}
+  //
+  // Please provide specific, actionable implementation advice considering the repository's context, technology stack, and recent activity. Include code examples where appropriate.`;
+  //
+  //     const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  //     const result = await model.generateContent(prompt);
+  //     const response = await result.response;
+  //     const advice = response.text();
+  //
+  //     console.log(`Gemini Flash response generated successfully`);
+  //
+  //     return {
+  //       success: true,
+  //       message: 'Implementation advice generated successfully',
+  //       data: {
+  //         question,
+  //         advice,
+  //         repository: this.currentRepository.fullName
+  //       }
+  //     };
+  //   } catch (error) {
+  //     console.error('Failed to get implementation advice:', error);
+  //     return {
+  //       success: false,
+  //       message: `Failed to get implementation advice: ${error.message}`
+  //     };
+  //   }
+  // }
 
-    if (!this.currentRepository) {
-      return {
-        success: false,
-        message: 'No repository selected'
-      };
-    }
-
-    const { question, context } = args;
+  async askClaude(args, onStreamMessage = null) {
+    const { prompt, workingDirectory, claudeSessionId } = args;
     
-    if (!question) {
-      return {
-        success: false,
-        message: 'Question is required for implementation advice'
-      };
-    }
-
-    try {
-      console.log(`Getting implementation advice for: ${question}`);
-      
-      // Get repository context
-      const repoInfo = await this.getRepositoryInfo();
-      const recentIssues = await this.listIssues({ limit: 5 });
-      const recentCommits = await this.listCommits({ limit: 5 });
-
-      // Build context for Gemini
-      let prompt = `You are a senior software engineer providing implementation advice for a GitHub repository.
-
-Repository: ${this.currentRepository.fullName}
-Description: ${repoInfo.data?.description || 'No description available'}
-Language: ${repoInfo.data?.language || 'Unknown'}
-
-Recent Issues:
-${recentIssues.success ? recentIssues.data.issues.map(issue => `- #${issue.number}: ${issue.title}`).join('\n') : 'No recent issues'}
-
-Recent Commits:
-${recentCommits.success ? recentCommits.data.commits.map(commit => `- ${commit.sha}: ${commit.message}`).join('\n') : 'No recent commits'}
-
-Question: ${question}
-
-${context ? `Additional Context: ${context}` : ''}
-
-Please provide specific, actionable implementation advice considering the repository's context, technology stack, and recent activity. Include code examples where appropriate.`;
-
-      const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const advice = response.text();
-
-      console.log(`Gemini Flash response generated successfully`);
-
-      return {
-        success: true,
-        message: 'Implementation advice generated successfully',
-        data: {
-          question,
-          advice,
-          repository: this.currentRepository.fullName
-        }
-      };
-    } catch (error) {
-      console.error('Failed to get implementation advice:', error);
-      return {
-        success: false,
-        message: `Failed to get implementation advice: ${error.message}`
-      };
-    }
-  }
-
-  async askClaudeToMakePlan(args, onStreamMessage = null) {
-    const { prompt, workingDirectory } = args;
-    
-    console.log('=== CLAUDE SDK PLAN REQUEST START ===');
+    console.log('=== CLAUDE SDK REQUEST START ===');
     console.log('Raw args received:', JSON.stringify(args, null, 2));
     
     if (!prompt) {
       console.log('ERROR: No prompt provided in args');
       return {
         success: false,
-        message: 'Prompt is required for Claude planning'
+        message: 'Prompt is required for Claude'
       };
     }
 
@@ -678,34 +680,35 @@ Please provide specific, actionable implementation advice considering the reposi
       console.log(`  - Base directory: ${process.env.DEFAULT_CODE_PATH || '/Users/reed/Code'}`);
       console.log(`  - Target directory: ${targetDirectory}`);
       
-      // Use Claude Code SDK to generate the plan with streaming
-      const planResult = await this.claudeCodeManager.createPlan(prompt, targetDirectory, onStreamMessage);
+      // Use Claude Code SDK to get response with streaming
+      const claudeResult = await this.claudeCodeManager.createPlan(prompt, targetDirectory, onStreamMessage, claudeSessionId);
       
-      console.log('✓ Claude Code SDK planning completed');
+      console.log('✓ Claude Code SDK response completed');
       
       const response = {
         success: true,
-        message: 'Claude planning completed successfully',
+        message: 'Claude response completed successfully',
         data: {
           prompt,
           workingDirectory: targetDirectory,
           repository: this.currentRepository?.fullName,
-          plan: planResult.plan,
-          responses: planResult.responses,
-          timestamp: planResult.timestamp
+          plan: claudeResult.plan,
+          responses: claudeResult.responses,
+          sessionId: claudeResult.sessionId, // Include session ID for continuation
+          timestamp: claudeResult.timestamp
         }
       };
       
-      console.log('✓ Response prepared with plan length:', planResult.plan.length);
-      console.log('=== CLAUDE SDK PLAN REQUEST END ===');
+      console.log('✓ Response prepared with content length:', claudeResult.plan.length);
+      console.log('=== CLAUDE SDK REQUEST END ===');
       
       return response;
     } catch (error) {
-      console.error('❌ Failed to create Claude plan:', error);
+      console.error('❌ Failed to get Claude response:', error);
       console.error('Error stack:', error.stack);
       return {
         success: false,
-        message: `Failed to create Claude plan: ${error.message}`
+        message: `Failed to get Claude response: ${error.message}`
       };
     }
   }

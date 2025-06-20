@@ -46,17 +46,34 @@ export function Sidebar({
   }
 
   return (
-    <div className="bg-gray-950 text-gray-200 w-64 min-h-screen flex flex-col border-r border-gray-700">
+    <>
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 z-40" 
+        onClick={onToggle}
+      />
+      
+      {/* Sidebar */}
+      <div className="fixed top-0 left-0 h-full bg-gray-950 text-gray-200 w-64 flex flex-col border-r border-gray-700 z-50 shadow-xl">
       {/* Header */}
       <div className="p-4 border-b border-gray-700">
-        <div className="flex items-center space-x-3">
-        <div className="grid grid-cols-2 gap-1 w-4 h-4">
-            <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-            <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-            <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
-            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="grid grid-cols-2 gap-1 w-4 h-4">
+              <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+              <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+              <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+            </div>
+            <h1 className="text-2xl font-bold text-white">Relay</h1>
           </div>
-          <h1 className="text-2xl font-bold text-white">Relay</h1>
+          <button
+            onClick={onToggle}
+            className="p-1 text-gray-400 hover:text-gray-200 rounded hover:bg-gray-800 transition-colors"
+            title="Close sidebar"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
       </div>
       
@@ -150,5 +167,6 @@ export function Sidebar({
           </button>
       </div>
     </div>
+    </>
   );
 }

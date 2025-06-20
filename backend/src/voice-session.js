@@ -3,11 +3,13 @@ import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 
 export class VoiceSession {
-  constructor(sessionId, socket, openaiAPIKey, githubManager) {
+  constructor(sessionId, socket, openaiAPIKey, githubManager, sessionManager, chatId = null) {
     this.sessionId = sessionId;
     this.socket = socket;
     this.openaiAPIKey = openaiAPIKey;
     this.githubManager = githubManager;
+    this.sessionManager = sessionManager;
+    this.chatId = chatId;
     
     this.currentProject = null;
     this.isRecording = false;
@@ -19,8 +21,38 @@ export class VoiceSession {
     this.processedCallIds = new Set(); // Track processed function calls to prevent duplicates
     this.currentTranscript = ''; // Accumulate streaming transcription
     this.recentFunctionCalls = new Map(); // Track recent function calls by content hash
+    this.conversationState = {
+      transcriptions: [],
+      functionResults: [],
+      claudeStreamingTexts: [],
+      claudeTodoWrites: [],
+      repositoryIssues: [],
+      claudeSessionId: null // Track Claude session for conversation continuation
+    };
+    this.snapshotInterval = null;
     
     this.setupSocketHandlers();
+    this.startSnapshotInterval();
+  }
+  
+  startSnapshotInterval() {
+    // Create snapshots every 5 minutes if we have a chat ID
+    if (this.chatId && this.sessionManager) {
+      this.snapshotInterval = setInterval(() => {
+        this.createSnapshot();
+      }, 5 * 60 * 1000); // 5 minutes
+    }
+  }
+  
+  async createSnapshot() {
+    if (!this.chatId || !this.sessionManager) return;
+    
+    try {
+      await this.sessionManager.createSnapshot(this.chatId, this.conversationState);
+      console.log(`Created snapshot for chat ${this.chatId}`);
+    } catch (error) {
+      console.error('Failed to create snapshot:', error);
+    }
   }
 
   setupSocketHandlers() {
@@ -53,6 +85,27 @@ export class VoiceSession {
 
   async start() {
     try {
+      // If we have a chat ID, resume the session
+      if (this.chatId && this.sessionManager) {
+        try {
+          const sessionData = await this.sessionManager.resumeSession(this.chatId);
+          console.log(`Resumed chat session ${this.chatId}`);
+          
+          // Send the session data to the frontend
+          this.sendMessage({
+            type: 'session_resumed',
+            data: {
+              chatId: this.chatId,
+              chat: sessionData.chat,
+              snapshot: sessionData.snapshot,
+              messages: sessionData.messages
+            }
+          });
+        } catch (error) {
+          console.error('Failed to resume session:', error);
+        }
+      }
+      
       this.sendStatusMessage('connected', 'Voice session started. Press record to begin.', '');
       console.log(`Voice session ${this.sessionId} started`);
     } catch (error) {
@@ -292,29 +345,30 @@ export class VoiceSession {
           }
         }
       },
+      // COMMENTED OUT: Gemini implementation advice - keeping for potential future use
+      // {
+      //   type: 'function',
+      //   name: 'get_implementation_advice',
+      //   description: 'CALL THIS FUNCTION when user asks implementation questions starting with: "How should I", "How do I", "How can I", "What\'s the best way to", "I need help implementing", "How to implement", "Help me implement", or any variation asking for implementation guidance. This function gets expert advice from Gemini Flash AI for development questions and coding challenges.',
+      //   parameters: {
+      //     type: 'object',
+      //     properties: {
+      //       question: {
+      //         type: 'string',
+      //         description: 'The exact implementation question the user asked, including any typos or informal language'
+      //       },
+      //       context: {
+      //         type: 'string',
+      //         description: 'Additional context about their specific technology stack, requirements, or constraints'
+      //       }
+      //     },
+      //     required: ['question']
+      //   }
+      // },
       {
         type: 'function',
-        name: 'get_implementation_advice',
-        description: 'CALL THIS FUNCTION when user asks implementation questions starting with: "How should I", "How do I", "How can I", "What\'s the best way to", "I need help implementing", "How to implement", "Help me implement", or any variation asking for implementation guidance. This function gets expert advice from Gemini Flash AI for development questions and coding challenges.',
-        parameters: {
-          type: 'object',
-          properties: {
-            question: {
-              type: 'string',
-              description: 'The exact implementation question the user asked, including any typos or informal language'
-            },
-            context: {
-              type: 'string',
-              description: 'Additional context about their specific technology stack, requirements, or constraints'
-            }
-          },
-          required: ['question']
-        }
-      },
-      {
-        type: 'function',
-        name: 'ask_claude_to_make_plan',
-        description: 'CALL THIS FUNCTION when user says "Ask claude to make a plan" or similar variations asking Claude to create a plan. This will open a terminal session and run claude -p with the user\'s prompt.',
+        name: 'ask_claude',
+        description: 'CALL THIS FUNCTION when user asks ANY question, seeks advice, or wants help with implementation, planning, or coding. Routes all questions to Claude for expert assistance.',
         parameters: {
           type: 'object',
           properties: {
@@ -535,6 +589,24 @@ export class VoiceSession {
           text: message.transcript
         }
       });
+      
+      // Add to conversation state
+      this.conversationState.transcriptions.push({
+        text: message.transcript,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Save transcription to database if we have a chat ID
+      if (this.chatId && this.sessionManager) {
+        this.sessionManager.addMessage(
+          this.chatId,
+          'user',
+          message.transcript,
+          { source: 'voice' }
+        ).catch(error => {
+          console.error('Failed to save transcription to database:', error);
+        });
+      }
     } else {
       console.log('📝 [DEBUG] No transcript in message');
     }
@@ -571,12 +643,16 @@ export class VoiceSession {
       }
     }
 
-    const functionType = functionName === 'get_implementation_advice' ? 'Gemini' : 'GitHub';
+    // Determine function type for logging
+    let functionType = 'GitHub';
+    if (functionName === 'ask_claude') {
+      functionType = 'Claude';
+    }
     console.log(`Executing ${functionType} function: ${functionName} with args:`, args);
     this.sendStatusMessage('executing', `Executing ${functionType}: ${functionName}`, this.currentProject);
 
-    // Send immediate "Asking Claude..." feedback for Claude planning functions
-    if (functionName === 'ask_claude_to_make_plan') {
+    // Send immediate "Asking Claude..." feedback for Claude functions
+    if (functionName === 'ask_claude') {
       console.log('✓ Sending immediate "Asking Claude..." feedback');
       this.sendMessage({
         type: 'function_result',
@@ -588,57 +664,68 @@ export class VoiceSession {
     }
 
     try {
-      // Create streaming callback for Claude planning functions
-      const streamCallback = (functionName === 'ask_claude_to_make_plan') ? 
+      // Create streaming callback for Claude functions
+      const streamCallback = (functionName === 'ask_claude') ? 
         (streamMessage) => this.handleClaudeStreamMessage(streamMessage) : null;
+
+      // Add Claude session ID for continuation if this is a Claude function
+      const enhancedArgs = functionName === 'ask_claude' ? 
+        { ...args, claudeSessionId: this.conversationState.claudeSessionId } : args;
 
       const result = await this.githubManager.executeFunction(
         this.currentProject,
         functionName,
-        args,
+        enhancedArgs,
         streamCallback
       );
 
       if (result.success) {
         this.sendStatusMessage('completed', `Completed: ${functionName}`, this.currentProject);
         
-        // Handle Gemini functions differently - bypass OpenAI entirely
-        if (functionName === 'get_implementation_advice') {
-          console.log('Sending Gemini advice directly to frontend (bypassing OpenAI)');
-          
-          this.sendMessage({
-            type: 'gemini_advice',
-            data: {
-              question: result.data?.question || 'Implementation question',
-              advice: result.data?.advice || result.message,
-              repository: result.data?.repository || this.currentProject
-            }
-          });
-          
-          // Send a simple confirmation to OpenAI without requesting a response
-          const functionResult = {
-            type: 'conversation.item.create',
-            item: {
-              type: 'function_call_output',
-              call_id: callId,
-              output: JSON.stringify({ status: 'completed', message: 'Implementation advice provided' })
-            }
-          };
-          
-          if (this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN) {
-            this.openaiWs.send(JSON.stringify(functionResult));
-            // Deliberately NOT sending response.create to prevent OpenAI commentary
-          }
-        } else if (functionName === 'ask_claude_to_make_plan') {
-          // Handle Claude planning with SDK - streaming already handled, no need for final plan
-          console.log('=== VOICE SESSION: HANDLING CLAUDE SDK PLAN ===');
+        // COMMENTED OUT: Gemini handling logic - keeping for potential future use
+        // if (functionName === 'get_implementation_advice') {
+        //   console.log('Sending Gemini advice directly to frontend (bypassing OpenAI)');
+        //   
+        //   this.sendMessage({
+        //     type: 'gemini_advice',
+        //     data: {
+        //       question: result.data?.question || 'Implementation question',
+        //       advice: result.data?.advice || result.message,
+        //       repository: result.data?.repository || this.currentProject
+        //     }
+        //   });
+        //   
+        //   // Send a simple confirmation to OpenAI without requesting a response
+        //   const functionResult = {
+        //     type: 'conversation.item.create',
+        //     item: {
+        //       type: 'function_call_output',
+        //       call_id: callId,
+        //       output: JSON.stringify({ status: 'completed', message: 'Implementation advice provided' })
+        //     }
+        //   };
+        //   
+        //   if (this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN) {
+        //     this.openaiWs.send(JSON.stringify(functionResult));
+        //     // Deliberately NOT sending response.create to prevent OpenAI commentary
+        //   }
+        // } else 
+        if (functionName === 'ask_claude') {
+          // Handle Claude with SDK - streaming already handled, no need for final response
+          console.log('=== VOICE SESSION: HANDLING CLAUDE SDK RESPONSE ===');
           console.log('Function result from GitHub manager:', JSON.stringify(result, null, 2));
+          
+          // Store Claude session ID for conversation continuation
+          if (result.data?.sessionId) {
+            this.conversationState.claudeSessionId = result.data.sessionId;
+            console.log(`✓ Stored Claude session ID for continuation: ${result.data.sessionId}`);
+          }
           
           // Note: function_result was already sent immediately when function started
           // Individual sections and todos were streamed progressively
           // No need to send the complete plan again as it would duplicate content
           
-          console.log('✓ Claude plan streaming completed, all content already sent');
+          console.log('✓ Claude response streaming completed, all content already sent');
           
           // Send simple confirmation to OpenAI (bypass response generation)
           const functionResult = {
@@ -648,7 +735,7 @@ export class VoiceSession {
               call_id: callId,
               output: JSON.stringify({ 
                 status: 'completed', 
-                message: 'Claude plan generated successfully' 
+                message: 'Claude response generated successfully' 
               })
             }
           };
@@ -677,6 +764,9 @@ export class VoiceSession {
             type: 'function_result',
             data: functionResultData
           });
+          
+          // Add to conversation state
+          this.conversationState.functionResults.push(functionResultData);
           
           // Send function result back to OpenAI and request response
           const functionResult = {
@@ -758,6 +848,24 @@ export class VoiceSession {
           timestamp: streamMessage.timestamp
         }
       });
+      
+      // Add to conversation state
+      this.conversationState.claudeStreamingTexts.push({
+        content: streamMessage.content,
+        timestamp: streamMessage.timestamp
+      });
+      
+      // Save Claude response to database
+      if (this.chatId && this.sessionManager) {
+        this.sessionManager.addMessage(
+          this.chatId,
+          'claude',
+          streamMessage.content,
+          { streaming: true, timestamp: streamMessage.timestamp }
+        ).catch(error => {
+          console.error('Failed to save Claude response to database:', error);
+        });
+      }
     } else if (streamMessage.type === 'claude_todowrite') {
       // Send TodoWrite tool call as a structured message
       this.sendMessage({
@@ -767,6 +875,24 @@ export class VoiceSession {
           timestamp: streamMessage.timestamp
         }
       });
+      
+      // Add to conversation state
+      this.conversationState.claudeTodoWrites.push({
+        todos: streamMessage.content.todos,
+        timestamp: streamMessage.timestamp
+      });
+      
+      // Save TodoWrite to database
+      if (this.chatId && this.sessionManager) {
+        this.sessionManager.addMessage(
+          this.chatId,
+          'claude',
+          'TodoWrite',
+          { todos: streamMessage.content.todos, timestamp: streamMessage.timestamp }
+        ).catch(error => {
+          console.error('Failed to save Claude TodoWrite to database:', error);
+        });
+      }
     }
   }
 
@@ -791,21 +917,25 @@ export class VoiceSession {
 You are controlling GitHub for repository: ${this.currentProject}
 Repository: ${status.fullName}
 URL: ${status.url}
-Available commands: create_github_issue, update_github_issue, close_github_issue, list_issues, get_repository_info, list_commits, create_pull_request, list_pull_requests, get_implementation_advice, ask_claude_to_make_plan
+Available commands: create_github_issue, update_github_issue, close_github_issue, list_issues, get_repository_info, list_commits, create_pull_request, list_pull_requests, ask_claude
 
 FUNCTION PRIORITY RULES:
-1. ALWAYS use ask_claude_to_make_plan when user says "Ask claude to make a plan" or similar requests for Claude to create a plan
-2. ALWAYS use get_implementation_advice for ANY question asking HOW to implement, build, or do something
-3. Only use create_github_issue when user explicitly wants to CREATE an issue, not when asking for implementation help
-4. Implementation questions should NEVER create issues - they should get advice first
+1. ALWAYS use ask_claude for ANY question, advice request, implementation help, planning, or general queries
+2. Only use GitHub commands when user explicitly wants to perform GitHub actions (create issue, update issue, etc.)
+3. Default behavior: Route questions to Claude
 
-IMPORTANT: When get_implementation_advice returns results, you must ONLY present the Gemini advice exactly as provided. DO NOT add your own analysis, explanations, or additional recommendations. Act as a presenter of Gemini's response, not as a competing AI assistant. Simply relay the implementation advice that Gemini provided.
+IMPORTANT: When ask_claude returns results, you must ONLY present Claude's response exactly as provided. DO NOT add your own analysis, explanations, or additional recommendations. Act as a presenter of Claude's response, not as a competing AI assistant. Simply relay the advice that Claude provided.
 
 When the user gives voice commands, convert them to appropriate function calls.
 
 Examples:
-- "Ask claude to make a plan" -> ask_claude_to_make_plan
-- "Ask claude to make a plan for user authentication" -> ask_claude_to_make_plan
+- "Ask claude to make a plan" -> ask_claude
+- "How should I implement user authentication?" -> ask_claude
+- "What's the best way to add user login?" -> ask_claude
+- "How do I add caching to this API?" -> ask_claude
+- "Help me implement search functionality" -> ask_claude
+- "Why not use Firebase auth instead?" -> ask_claude
+- "What are the pros and cons of different approaches?" -> ask_claude
 - "Create an issue for adding user authentication" -> create_github_issue
 - "Update issue 5 to mark it as completed" -> update_github_issue  
 - "Close issue 3" -> close_github_issue
@@ -813,22 +943,6 @@ Examples:
 - "Get repository information" -> get_repository_info
 - "List recent commits" -> list_commits
 - "Create a pull request from feature branch to main" -> create_pull_request
-
-IMPLEMENTATION ADVICE EXAMPLES (ALWAYS use get_implementation_advice):
-- "How should I implement user authentication?" -> get_implementation_advice
-- "How do I add caching to this API?" -> get_implementation_advice
-- "How should I implement authentication for my React + Vue website?" -> get_implementation_advice
-- "How should I implement authentication fro my React + Vue website?" -> get_implementation_advice (with typo)
-- "What's the best way to add user login?" -> get_implementation_advice
-- "How can I implement real-time notifications?" -> get_implementation_advice
-- "I need help implementing a payment system" -> get_implementation_advice
-- "How to implement file uploads?" -> get_implementation_advice
-- "Help me implement search functionality" -> get_implementation_advice
-- "How do I build a chat feature?" -> get_implementation_advice
-- "What's the best approach for user roles?" -> get_implementation_advice
-- "How can I add database caching?" -> get_implementation_advice
-- "I want to implement OAuth, how should I do it?" -> get_implementation_advice
-- "How should I structure my API endpoints?" -> get_implementation_advice
 
 Always be helpful and confirm what actions you're taking.
           `
@@ -874,9 +988,11 @@ Always be helpful and confirm what actions you're taking.
       }
 
       let functionType = 'GitHub';
-      if (functionName === 'get_implementation_advice') {
-        functionType = 'Gemini';
-      } else if (functionName === 'ask_claude_to_make_plan') {
+      // COMMENTED OUT: Gemini support
+      // if (functionName === 'get_implementation_advice') {
+      //   functionType = 'Gemini';
+      // } else 
+      if (functionName === 'ask_claude') {
         functionType = 'Claude Code SDK';
       }
       
@@ -890,8 +1006,8 @@ Always be helpful and confirm what actions you're taking.
 
       console.log(`Developer mode: Function ${functionName} result:`, result);
 
-      // Handle Claude plan responses specially
-      if (functionName === 'ask_claude_to_make_plan' && result.success) {
+      // Handle Claude responses specially
+      if (functionName === 'ask_claude' && result.success) {
         console.log('✓ Sending Claude plan response to frontend from test function');
         
         const messageData = {
@@ -958,6 +1074,17 @@ Always be helpful and confirm what actions you're taking.
     
     this.closed = true;
     this.isRecording = false;
+    
+    // Clear snapshot interval
+    if (this.snapshotInterval) {
+      clearInterval(this.snapshotInterval);
+      this.snapshotInterval = null;
+    }
+    
+    // Create final snapshot before closing
+    if (this.chatId && this.sessionManager) {
+      this.createSnapshot();
+    }
     
     if (this.openaiWs) {
       try {
