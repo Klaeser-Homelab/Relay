@@ -170,6 +170,8 @@ export class GitHubManager {
         return await this.closeGitHubIssue(args);
       case 'add_issue_comment':
         return await this.addIssueComment(args);
+      case 'get_issue_comments':
+        return await this.getIssueComments(args);
       case 'get_repository_info':
         return await this.getRepositoryInfo();
       case 'list_commits':
@@ -349,6 +351,64 @@ export class GitHubManager {
       return {
         success: false,
         message: `Failed to add comment: ${error.message}`
+      };
+    }
+  }
+
+  async getIssueComments(args) {
+    if (!this.currentRepository) {
+      return {
+        success: false,
+        message: 'No repository selected'
+      };
+    }
+
+    const { issue_number } = args;
+
+    if (!issue_number) {
+      return {
+        success: false,
+        message: 'Issue number is required'
+      };
+    }
+
+    try {
+      console.log(`Fetching comments for issue #${issue_number} in ${this.currentRepository.fullName}`);
+      
+      const { data: comments } = await this.octokit.rest.issues.listComments({
+        owner: this.currentRepository.owner,
+        repo: this.currentRepository.name,
+        issue_number: issue_number
+      });
+
+      const commentList = comments.map(comment => ({
+        id: comment.id,
+        body: comment.body,
+        user: {
+          login: comment.user.login,
+          avatar_url: comment.user.avatar_url
+        },
+        created_at: comment.created_at,
+        updated_at: comment.updated_at,
+        html_url: comment.html_url
+      }));
+
+      console.log(`Successfully fetched ${commentList.length} comments for issue #${issue_number}`);
+
+      return {
+        success: true,
+        message: `Found ${commentList.length} comments for issue #${issue_number}`,
+        data: {
+          comments: commentList,
+          issueNumber: issue_number,
+          repository: this.currentRepository.fullName
+        }
+      };
+    } catch (error) {
+      console.error('Failed to get issue comments:', error);
+      return {
+        success: false,
+        message: `Failed to get comments: ${error.message}`
       };
     }
   }

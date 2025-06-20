@@ -12,6 +12,7 @@ import { ClaudePlan } from './components/ClaudePlan';
 import { Settings } from './components/Settings';
 import { ConversationHistory } from './components/ConversationHistory';
 import { Sidebar } from './components/Sidebar';
+import { SuggestedActions } from './components/SuggestedActions';
 import { useGitHubProjects } from './hooks/useGitHubProjects';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudioRecording } from './hooks/useAudioRecording';
@@ -31,6 +32,8 @@ function App() {
   const [inactivityTimer, setInactivityTimer] = useState<NodeJS.Timeout | null>(null);
   const [recentChats, setRecentChats] = useState<any[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [suggestedActionsVisible, setSuggestedActionsVisible] = useState(true);
+  const [isUpdatingPlan, setIsUpdatingPlan] = useState(false);
   
   const {
     projects,
@@ -222,10 +225,49 @@ function App() {
     return success;
   };
 
+  const fetchIssueComments = async (issueNumber: number, repositoryName: string) => {
+    try {
+      const response = await fetch('/api/github/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectName: repositoryName,
+          functionName: 'get_issue_comments',
+          args: { issue_number: issueNumber }
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success && result.data && result.data.comments) {
+        console.log(`Loaded ${result.data.comments.length} comments for issue #${issueNumber}`);
+        return result.data.comments;
+      } else {
+        console.error('Failed to fetch issue comments:', result.message);
+        return [];
+      }
+    } catch (error) {
+      console.error('Error fetching issue comments:', error);
+      return [];
+    }
+  };
+
   const handleIssueClick = async (issue: any) => {
     setActiveIssue(issue);
     if (issue) {
       console.log(`Active issue set to #${issue.number}: ${issue.title}`);
+      
+      // Fetch and scan issue comments
+      if (selectedProject) {
+        const comments = await fetchIssueComments(issue.number, selectedProject.fullName);
+        if (comments.length > 0) {
+          console.log('Issue comments:', comments);
+          // Store comments in the active issue for potential use
+          setActiveIssue(prev => prev ? { ...prev, comments } : null);
+        }
+      }
       
       // Update the session with the active issue
       if (currentChatId) {
@@ -320,7 +362,8 @@ function App() {
           setActiveIssue({
             number: sessionData.chat.active_issue_number,
             title: sessionData.chat.active_issue_title,
-            url: sessionData.chat.active_issue_url
+            url: sessionData.chat.active_issue_url,
+            labels: [] // Initialize with empty labels array
           });
         }
         
@@ -537,6 +580,66 @@ function App() {
     }
   };
 
+  // Suggested Actions handlers
+  const handleUpdatePlan = async () => {
+    if (!activeIssue || !selectedProject) {
+      alert('No active issue selected for plan update');
+      return;
+    }
+
+    setIsUpdatingPlan(true);
+    try {
+      // Create a sample plan object - in a real implementation, this would come from the current plan state
+      const planData = {
+        timestamp: new Date().toISOString(),
+        issue: `#${activeIssue.number}: ${activeIssue.title}`,
+        repository: selectedProject.fullName,
+        status: 'updated',
+        actions: [
+          'Analyze current issue requirements',
+          'Review existing codebase',
+          'Implement solution',
+          'Test changes',
+          'Submit for review'
+        ]
+      };
+
+      const response = await fetch('/api/github/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectName: selectedProject.fullName,
+          functionName: 'add_issue_comment',
+          args: {
+            number: activeIssue.number,
+            body: `## 📋 Plan Update\n\n\`\`\`json\n${JSON.stringify(planData, null, 2)}\n\`\`\`\n\n---\n*Plan updated by Claude Code at ${new Date().toLocaleString()}*`
+          }
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log(`Plan updated for issue #${activeIssue.number}`);
+      } else {
+        console.error('Failed to update plan:', result.message);
+        alert(`Failed to update plan: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error updating plan:', error);
+      alert('Error updating plan');
+    } finally {
+      setIsUpdatingPlan(false);
+    }
+  };
+
+  const handleImplement = () => {
+    alert('Not implemented, hah! Ironic!');
+  };
+
+
   return (
     <div className="min-h-screen bg-gray-800">
       {/* Sidebar */}
@@ -587,16 +690,6 @@ function App() {
                 </div>
               </div>
               <div className="flex items-center space-x-4">
-                {/* Terminal Button - Only show for cloned repos */}
-                {selectedProject && selectedProject.isCloned && (
-                  <button
-                    onClick={() => setShowTerminal(true)}
-                    className="p-2 text-gray-400 hover:text-gray-200 rounded-md hover:bg-gray-700 transition-colors"
-                    title="Open terminal for repository"
-                  >
-                    <TerminalIcon className="w-5 h-5" />
-                  </button>
-                )}
                 
                 {/* Plus Button - New Chat/Repository - Only show when repo selected */}
                 {selectedProject && (
@@ -621,12 +714,12 @@ function App() {
           
           {/* Active Issue Display - Top Right */}
           {activeIssue && selectedProject && (
-            <div className="absolute top-4 right-4 z-10">
+            <div className="absolute top-24 right-4 z-50">
               <div className="flex items-center space-x-2 bg-gray-800 px-3 py-2 rounded-lg border border-gray-600 shadow-lg">
                 <span className="text-gray-300 text-sm">Working on:</span>
                 <span className="font-mono text-blue-400 text-sm">#{activeIssue.number}</span>
                 <span className="text-white text-sm truncate max-w-48">{activeIssue.title}</span>
-                {activeIssue.labels.length > 0 && (
+                {activeIssue.labels && activeIssue.labels.length > 0 && (
                   <span className="ml-2">
                     {activeIssue.labels.slice(0, 2).map((label: string) => (
                       <span key={label} className="inline-block bg-gray-700 text-gray-300 text-xs px-1 rounded mr-1">
@@ -670,58 +763,20 @@ function App() {
                 />
               </div>
 
-              {/* Recording Button - Absolutely positioned at bottom */}
-              <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-30">
-                <div className="flex flex-col items-center space-y-4">
-                  <button
-                    onClick={handleMicrophoneClick}
-                    className={`w-32 h-32 rounded-full border-4 transition-all duration-200 flex items-center justify-center ${
-                      !connected
-                        ? 'bg-blue-500 border-blue-600 text-white hover:bg-blue-600 shadow-lg'
-                        : isRecording
-                        ? 'bg-red-500 border-red-600 text-white shadow-lg transform scale-110'
-                        : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600 hover:border-gray-500'
-                    }`}
-                    title={
-                      !connected 
-                        ? 'Connect to Voice Assistant' 
-                        : isRecording 
-                        ? 'Stop Recording' 
-                        : 'Start Recording'
-                    }
-                  >
-                    {!connected ? (
-                      <Mic className="w-14 h-14" />
-                    ) : isRecording ? (
-                      <Square className="w-10 h-10" />
-                    ) : (
-                      <Mic className="w-14 h-14" />
-                    )}
-
-                    {/* Audio Level Ring */}
-                    {isRecording && audioLevel > 0 && (
-                      <div
-                        className="absolute inset-0 rounded-full border-4 border-red-400 animate-pulse"
-                        style={{
-                          transform: `scale(${1 + audioLevel * 0.3})`,
-                          opacity: 0.6
-                        }}
-                      />
-                    )}
-                  </button>
-                  
-                  <div className="text-center">
-                    <p className="text-gray-400 text-sm">
-                      {!connected 
-                        ? 'Click to start recording' 
-                        : isRecording 
-                        ? 'Listening...' 
-                        : 'Click to start recording'
-                      }
-                    </p>
-                  </div>
-                </div>
-              </div>
+              {/* Suggested Actions - Always visible, includes microphone */}
+              <SuggestedActions
+                visible={suggestedActionsVisible}
+                onUpdatePlan={handleUpdatePlan}
+                onImplement={handleImplement}
+                onMicrophoneClick={handleMicrophoneClick}
+                onOpenTerminal={() => setShowTerminal(true)}
+                isUpdatingPlan={isUpdatingPlan}
+                connected={connected}
+                isRecording={isRecording}
+                audioLevel={audioLevel}
+                hasActiveIssue={!!activeIssue}
+                selectedProject={selectedProject}
+              />
             </>
           ) : (
             // Show project selector when no project is selected
