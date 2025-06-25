@@ -1,274 +1,153 @@
-# Relay Voice Server (JavaScript)
+# FastAPI Agent Example
 
-A mobile friendly voice-controlled development proof of concept.
+A simple FastAPI application with an `/agent/run` POST endpoint that mimics the behavior of your Fastify endpoint.
 
 ## Features
 
-- **🎤 Advanced Voice Control**: Powered by OpenAI Agent SDK with built-in audio processing
-- **🔄 Real-time Communication**: WebSocket-based bidirectional communication via Socket.io
-- **🛠️ GitHub Integration**: Create, update, and manage GitHub issues via voice commands
-- **📦 Git Operations**: Perform git commits, status checks, and branch operations
-- **🎯 Project Management**: Switch between and manage multiple development projects
-- **🤖 Intelligent Function Calling**: Automatic schema generation and validation
-- **📊 Built-in Tracing**: Debug voice interactions with comprehensive logging
-
-## Prerequisites
-
-- Node.js 18.0 or later
-- OpenAI API key with Realtime API access
-- Git installed and configured
-- GitHub CLI (`gh`) installed and authenticated (optional but recommended)
-- Existing Relay installation (for full functionality)
+- **POST /agent/run** - Main agent endpoint for processing prompts
+- **GET /** - Root endpoint with API information
+- **GET /health** - Health check endpoint
+- **GET /agent/status** - Agent status and capabilities
+- **GET /docs** - Auto-generated API documentation (Swagger UI)
+- **GET /redoc** - Alternative API documentation
 
 ## Quick Start
 
-### 1. Installation
+1. **Install dependencies using uv:**
+   ```bash
+   uv sync
+   ```
+
+2. **Run the server:**
+   ```bash
+   uv run python main.py
+   ```
+   
+   Or using the configured script:
+   ```bash
+   uv run start
+   ```
+   
+   Or directly with uvicorn:
+   ```bash
+   uv run uvicorn main:app --reload --host 0.0.0.0 --port 8080
+   ```
+
+### Alternative: Using pip (if you prefer)
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Run the server:**
+   ```bash
+   python main.py
+   ```
+
+3. **Access the API:**
+   - API: http://localhost:8080
+   - Interactive docs: http://localhost:8080/docs
+   - Alternative docs: http://localhost:8080/redoc
+
+## API Usage
+
+### POST /agent/run
+
+Send a prompt to the agent for processing.
+
+**Request:**
+```json
+{
+  "prompt": "Hello, how are you?",
+  "max_tokens": 1000,
+  "temperature": 0.7,
+  "stream": false
+}
+```
+
+**Response:**
+```json
+{
+  "id": "uuid-string",
+  "response": "Agent response text",
+  "prompt": "Original prompt",
+  "tokens_used": 25,
+  "processing_time": 0.523,
+  "timestamp": "2024-01-01T12:00:00.000Z",
+  "success": true
+}
+```
+
+### Example cURL Commands
 
 ```bash
-cd voice-server-js
-npm install
-```
+# Basic request
+curl -X POST "http://localhost:8080/agent/run" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Hello, how are you?"}'
 
-### 2. Configuration
+# Request with parameters
+curl -X POST "http://localhost:8080/agent/run" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Generate a Python function",
+    "max_tokens": 500,
+    "temperature": 0.5
+  }'
 
-```bash
-cp .env.example .env
-# Edit .env and add your OpenAI API key
-```
+# Health check
+curl http://localhost:8080/health
 
-Required environment variables:
-```env
-OPENAI_API_KEY=your-openai-api-key-here
-```
-
-Optional:
-```env
-GH_TOKEN=your-github-token-here
-PORT=8080
-NODE_ENV=development
-```
-
-### 3. Development
-
-```bash
-# Start development server with hot reload
-npm run dev
-
-# Or start production server
-npm start
-```
-
-### 4. Testing
-
-Open your browser to `http://localhost:8080` to access the web interface, or connect directly via WebSocket to test voice functionality.
-
-## API Reference
-
-### REST Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Health check |
-| `GET` | `/api/projects` | List available projects |
-| `POST` | `/api/projects/:name/select` | Select a project |
-| `GET` | `/api/projects/:name/status` | Get project status |
-
-### WebSocket Events
-
-#### Client → Server
-- `audio` - Send audio data for processing
-- `start_recording` - Begin voice recording session
-- `stop_recording` - End voice recording session
-- `select_project` - Switch to a different project
-
-#### Server → Client
-- `status` - Session status updates
-- `audio_response` - AI-generated audio response
-- `transcription` - Speech-to-text results
-- `function_result` - Results from executed commands
-
-## Voice Commands
-
-Once connected, you can use natural voice commands like:
-
-- *"Create a new issue titled 'Add user authentication'"*
-- *"Update issue 23 to mark it as completed"*
-- *"Show me the git status"*
-- *"Commit my changes with a smart message"*
-- *"List all open issues"*
-- *"Switch to the relay project"*
-- *"Push my changes to the remote repository"*
-
-## Architecture Improvements
-
-### OpenAI Agent SDK Benefits
-
-The JavaScript rewrite leverages the OpenAI Agent SDK for significant improvements:
-
-- **Simplified Audio Handling**: No manual base64 encoding/decoding
-- **Automatic Schema Generation**: Function definitions auto-generate OpenAI schemas
-- **Built-in Error Handling**: Better connection management and error recovery
-- **Context Management**: Improved conversation context and interruption handling
-- **Tracing & Debugging**: Built-in logging for voice interaction debugging
-
-### Project Structure
-
-```
-voice-server-js/
-├── package.json          # Dependencies and scripts
-├── src/
-│   ├── server.js         # Express + Socket.io server
-│   ├── voice-session.js  # RealtimeAgent session management
-│   ├── relay-manager.js  # Relay CLI integration
-│   └── tools/            # Function definitions
-│       ├── index.js      # Tool registry
-│       ├── github-tools.js
-│       ├── git-tools.js
-│       └── project-tools.js
-├── web/                  # Static web client (optional)
-├── Dockerfile           # Container configuration
-├── docker-compose.yml   # Multi-service setup
-└── README.md            # This file
-```
-
-## Docker Deployment
-
-### Build and Run
-
-```bash
-# Build the image
-docker build -t relay-voice-server .
-
-# Run with environment variables
-docker run -p 8080:8080 \
-  -e OPENAI_API_KEY=your-key \
-  -v $HOME/Code:/home/relay/projects:ro \
-  relay-voice-server
-```
-
-### Docker Compose
-
-```bash
-# Set environment variables
-export OPENAI_API_KEY=your-key-here
-export GH_TOKEN=your-token-here
-
-# Start services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f relay-voice
-
-# Stop services
-docker-compose down
+# Agent status
+curl http://localhost:8080/agent/status
 ```
 
 ## Development
 
-### Available Scripts
+### Using uv for development:
 
 ```bash
-npm start       # Start production server
-npm run dev     # Start development server with hot reload
-npm test        # Run tests (when implemented)
-npm run build   # No build step needed for Node.js
+# Install with dev dependencies
+uv sync --dev
+
+# Run tests (when added)
+uv run pytest
+
+# Format code
+uv run black .
+
+# Sort imports
+uv run isort .
+
+# Lint code
+uv run flake8 .
 ```
 
-### Adding New Voice Commands
+## Mock Behavior
 
-1. **Define the tool** in `src/tools/`:
-```javascript
-export const myNewTool = {
-  name: 'my_new_tool',
-  description: 'Description of what this tool does',
-  parameters: {
-    type: 'object',
-    properties: {
-      param1: {
-        type: 'string',
-        description: 'Parameter description'
-      }
-    },
-    required: ['param1']
-  },
-  async execute(relayManager, projectName, args) {
-    // Implementation
-    return { success: true, message: 'Done!' };
-  }
-};
-```
+The current implementation includes mock responses based on prompt content:
 
-2. **Register the tool** in `src/tools/index.js`
-3. **Implement the backend** in `relay-manager.js` if needed
+- Prompts containing "error" → Simulates processing error
+- Prompts containing "hello" → Friendly greeting response
+- Prompts containing "code" → Code generation example
+- Other prompts → Generic acknowledgment response
 
-### Integration with Existing Relay
+## Customization
 
-The voice server automatically detects and integrates with your existing Relay installation:
+To integrate with a real AI model or agent:
 
-1. **Binary Detection**: Searches for `relay` binary in common locations
-2. **Project Discovery**: Uses `relay list` or falls back to git repository scanning
-3. **Command Execution**: Executes Relay commands like `relay commit`, `relay open`
-4. **GitHub Integration**: Leverages existing GitHub CLI authentication
+1. Replace the `mock_agent_processing()` function in `main.py`
+2. Install additional dependencies (OpenAI, Anthropic, etc.)
+3. Add your API keys and configuration
+4. Update the response logic as needed
 
-## Troubleshooting
+## CORS
 
-### Common Issues
+The application includes CORS middleware configured to allow all origins for development. In production, update the `allow_origins` list to include only your specific domains.
 
-1. **OpenAI Connection Failed**
-   - Verify API key has Realtime API access
-   - Check network connectivity and firewall settings
-   - Ensure you're using a supported model
+## Error Handling
 
-2. **Audio Not Working**
-   - Check browser microphone permissions
-   - Verify WebSocket connection is established
-   - Look for audio format compatibility issues
-
-3. **Relay Commands Not Working**
-   - Ensure `relay` binary is in PATH or expected locations
-   - Verify project configuration
-   - Check GitHub CLI authentication: `gh auth status`
-
-### Debugging
-
-Enable detailed logging:
-```bash
-export LOG_LEVEL=debug
-npm run dev
-```
-
-Monitor WebSocket connections and function calls through server logs.
-
-## Migration from Go Version
-
-Key differences from the original Go implementation:
-
-- **Simplified codebase**: ~50% reduction in lines of code
-- **Better error handling**: Built-in SDK error management
-- **Improved audio**: No manual audio format handling
-- **Enhanced debugging**: Built-in tracing and logging
-- **Same API compatibility**: Existing clients work unchanged
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes and add tests
-4. Run tests: `npm test`
-5. Commit changes: `git commit -m 'Add amazing feature'`
-6. Push to branch: `git push origin feature/amazing-feature`
-7. Create a Pull Request
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## Support
-
-For issues and questions:
-- Check the [troubleshooting section](#troubleshooting)
-- Review server logs for error details
-- Open an issue on the repository with:
-  - Environment details (Node.js version, OS)
-  - Error logs and steps to reproduce
-  - Expected vs actual behavior
+The API includes comprehensive error handling:
+- Input validation (empty prompts, length limits)
+- Processing errors with detailed messages
+- HTTP status codes and structured error responses

@@ -1,87 +1,12 @@
-# Relay Voice Frontend
+# React + Vite
 
-A modern React frontend for voice-controlled GitHub repository management, built with TypeScript and Tailwind CSS.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Features
+Currently, two official plugins are available:
 
-- 🎤 **Voice Recording**: Push-to-talk or toggle recording modes
-- 📱 **Responsive Design**: Works on desktop and mobile devices
-- 🔄 **Real-time Updates**: Live transcription and function results
-- 🎨 **Modern UI**: Clean, GitHub-inspired interface
-- 🔊 **Audio Playback**: Hear AI responses directly in the browser
-- ⚡ **Real-time Communication**: WebSocket integration with voice server
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
 
-## Getting Started
+## Expanding the ESLint configuration
 
-### Prerequisites
-
-- Node.js 18+ 
-- The voice server running on port 8080
-- A GitHub token configured in the voice server
-
-### Installation
-
-```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-The frontend will be available at `http://localhost:3000` and will proxy API calls to the voice server at `http://localhost:8080`.
-
-### Build for Production
-
-```bash
-npm run build
-npm run preview
-```
-
-## Usage
-
-1. **Select Repository**: Choose a GitHub repository from your available projects
-2. **Connect**: Click "Connect to Voice Assistant" 
-3. **Start Recording**: Use push-to-talk (hold) or toggle mode
-4. **Voice Commands**: Say things like:
-   - "Create an issue for adding user authentication"
-   - "Show me the open issues"
-   - "List recent commits"
-   - "Get repository information"
-
-## Architecture
-
-```
-Frontend (React/TypeScript)
-├── Components/
-│   ├── ProjectSelector - GitHub repo selection
-│   ├── VoiceChat - Recording interface
-│   ├── StatusDisplay - Connection status
-│   ├── TranscriptionView - Speech-to-text
-│   └── FunctionResults - GitHub operation results
-├── Hooks/
-│   ├── useGitHubProjects - Project management
-│   ├── useWebSocket - Socket.io integration
-│   └── useAudioRecording - Web Audio API
-└── Types/
-    └── api.ts - TypeScript interfaces
-```
-
-## Development
-
-- **Hot Reload**: Changes are reflected instantly
-- **TypeScript**: Full type safety throughout
-- **ESLint**: Code quality enforcement
-- **Tailwind CSS**: Utility-first styling
-
-## Browser Compatibility
-
-- Chrome/Edge 88+
-- Firefox 84+
-- Safari 14+
-
-Requires modern browser with:
-- WebSocket support
-- Web Audio API
-- MediaRecorder API
-- ES2020 features
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
