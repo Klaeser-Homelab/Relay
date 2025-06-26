@@ -26,7 +26,7 @@ export function Sidebar() {
     recentConversations,
     loadingConversations,
     openSettings,
-    selectedProject
+    selectedRepository
   } = useSidebar()
   
   const { conversationId, createNewConversation } = useConversation()
@@ -191,8 +191,8 @@ export function Sidebar() {
               <span>Dev Mode</span>
             </button>
             
-            {/* Only show quiet mode when a project is selected */}
-            {selectedProject && (
+            {/* Only show quiet mode when a repository is selected */}
+            {selectedRepository && (
               <button
                 onClick={toggleQuietMode}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md transition-colors ${

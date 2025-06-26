@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import agents, health, usage, conversations, models, mcp, model_configs, projects
+from app.api.v1.endpoints import agents, health, usage, conversations, models, mcp, model_configs, repositories
 
 
 api_router = APIRouter()
@@ -12,4 +12,4 @@ api_router.include_router(conversations.router, prefix="/conversations", tags=["
 api_router.include_router(models.router, prefix="/models", tags=["models"])
 api_router.include_router(model_configs.router, prefix="/model-configs", tags=["model-configs"])
 api_router.include_router(mcp.router, prefix="/mcp", tags=["mcp"])
-api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
+api_router.include_router(repositories.router, prefix="/repositories", tags=["repositories"])

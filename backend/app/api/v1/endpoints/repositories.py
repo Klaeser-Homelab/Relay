@@ -10,8 +10,8 @@ from app.core.config import settings
 
 router = APIRouter()
 
-# In-memory storage for selected project (in production, use database)
-selected_project: Optional[str] = None
+# In-memory storage for selected repository (in production, use database)
+selected_repository: Optional[str] = None
 
 async def get_github_headers():
     """Get GitHub API headers with authentication"""
@@ -25,8 +25,8 @@ async def get_github_headers():
     }
 
 @router.get("/")
-async def list_projects():
-    """Get list of all GitHub projects/repositories"""
+async def list_repositories():
+    """Get list of all GitHub repositories"""
     headers = await get_github_headers()
     
     async with aiohttp.ClientSession() as session:
@@ -45,9 +45,9 @@ async def list_projects():
             repos = await response.json()
             
             # Format repository data
-            projects = []
+            repositories = []
             for repo in repos:
-                projects.append({
+                repositories.append({
                     "id": repo["id"],
                     "name": repo["name"],
                     "full_name": repo["full_name"],
@@ -67,27 +67,27 @@ async def list_projects():
                 })
             
             return {
-                "projects": projects,
-                "total": len(projects),
-                "selected": selected_project
+                "repositories": repositories,
+                "total": len(repositories),
+                "selected": selected_repository
             }
 
 @router.post("/select")
-async def select_project(project_name: str):
-    """Select a project as the active project"""
-    global selected_project
+async def select_repository(repository_name: str):
+    """Select a repository as the active repository"""
+    global selected_repository
     
-    # Verify project exists
+    # Verify repository exists
     headers = await get_github_headers()
     
     async with aiohttp.ClientSession() as session:
         # Try to get repository info to verify it exists
         async with session.get(
-            f"https://api.github.com/repos/{project_name}",
+            f"https://api.github.com/repos/{repository_name}",
             headers=headers
         ) as response:
             if response.status == 404:
-                raise HTTPException(status_code=404, detail=f"Project '{project_name}' not found")
+                raise HTTPException(status_code=404, detail=f"Repository '{repository_name}' not found")
             elif response.status != 200:
                 raise HTTPException(
                     status_code=response.status,
@@ -95,12 +95,12 @@ async def select_project(project_name: str):
                 )
             
             repo_data = await response.json()
-            selected_project = repo_data["full_name"]
+            selected_repository = repo_data["full_name"]
             
             return {
                 "success": True,
-                "selected": selected_project,
-                "project": {
+                "selected": selected_repository,
+                "repository": {
                     "name": repo_data["name"],
                     "full_name": repo_data["full_name"],
                     "description": repo_data["description"],
@@ -109,18 +109,18 @@ async def select_project(project_name: str):
             }
 
 @router.get("/status")
-async def get_project_status(project_name: str):
-    """Get detailed status of a project"""
+async def get_repository_status(repository_name: str):
+    """Get detailed status of a repository"""
     headers = await get_github_headers()
     
     async with aiohttp.ClientSession() as session:
         # Get repository info
         async with session.get(
-            f"https://api.github.com/repos/{project_name}",
+            f"https://api.github.com/repos/{repository_name}",
             headers=headers
         ) as response:
             if response.status == 404:
-                raise HTTPException(status_code=404, detail=f"Project '{project_name}' not found")
+                raise HTTPException(status_code=404, detail=f"Repository '{repository_name}' not found")
             elif response.status != 200:
                 raise HTTPException(
                     status_code=response.status,
@@ -133,7 +133,7 @@ async def get_project_status(project_name: str):
             status_info = {
                 "name": repo_data["name"],
                 "full_name": repo_data["full_name"],
-                "is_selected": selected_project == repo_data["full_name"],
+                "is_selected": selected_repository == repo_data["full_name"],
                 "is_cloned": check_if_cloned(repo_data["name"]),
                 "local_path": get_local_path(repo_data["name"]) if check_if_cloned(repo_data["name"]) else None,
                 "default_branch": repo_data["default_branch"],
@@ -146,7 +146,7 @@ async def get_project_status(project_name: str):
             
             # Get branch info
             async with session.get(
-                f"https://api.github.com/repos/{project_name}/branches",
+                f"https://api.github.com/repos/{repository_name}/branches",
                 headers=headers
             ) as branch_response:
                 if branch_response.status == 200:
@@ -157,18 +157,18 @@ async def get_project_status(project_name: str):
             return status_info
 
 @router.get("/info")
-async def get_repository_info(project_name: str):
+async def get_repository_info(repository_name: str):
     """Get comprehensive repository information"""
     headers = await get_github_headers()
     
     async with aiohttp.ClientSession() as session:
         # Get repository info
         async with session.get(
-            f"https://api.github.com/repos/{project_name}",
+            f"https://api.github.com/repos/{repository_name}",
             headers=headers
         ) as response:
             if response.status == 404:
-                raise HTTPException(status_code=404, detail=f"Repository '{project_name}' not found")
+                raise HTTPException(status_code=404, detail=f"Repository '{repository_name}' not found")
             elif response.status != 200:
                 raise HTTPException(
                     status_code=response.status,
@@ -180,7 +180,7 @@ async def get_repository_info(project_name: str):
             # Get contributors
             contributors = []
             async with session.get(
-                f"https://api.github.com/repos/{project_name}/contributors",
+                f"https://api.github.com/repos/{repository_name}/contributors",
                 headers=headers,
                 params={"per_page": 10}
             ) as contrib_response:
@@ -190,7 +190,7 @@ async def get_repository_info(project_name: str):
             # Get languages
             languages = {}
             async with session.get(
-                f"https://api.github.com/repos/{project_name}/languages",
+                f"https://api.github.com/repos/{repository_name}/languages",
                 headers=headers
             ) as lang_response:
                 if lang_response.status == 200:
@@ -199,7 +199,7 @@ async def get_repository_info(project_name: str):
             # Get recent commits
             commits = []
             async with session.get(
-                f"https://api.github.com/repos/{project_name}/commits",
+                f"https://api.github.com/repos/{repository_name}/commits",
                 headers=headers,
                 params={"per_page": 5}
             ) as commit_response:
@@ -250,8 +250,8 @@ async def get_repository_info(project_name: str):
             }
 
 @router.get("/issues")
-async def get_project_issues(
-    project_name: str,
+async def get_repository_issues(
+    repository_name: str,
     state: str = "open",
     labels: Optional[str] = None,
     sort: str = "created",
@@ -259,7 +259,7 @@ async def get_project_issues(
     per_page: int = 30,
     page: int = 1
 ):
-    """Get issues for a specific project"""
+    """Get issues for a specific repository"""
     headers = await get_github_headers()
     
     params = {
@@ -275,12 +275,12 @@ async def get_project_issues(
     
     async with aiohttp.ClientSession() as session:
         async with session.get(
-            f"https://api.github.com/repos/{project_name}/issues",
+            f"https://api.github.com/repos/{repository_name}/issues",
             headers=headers,
             params=params
         ) as response:
             if response.status == 404:
-                raise HTTPException(status_code=404, detail=f"Project '{project_name}' not found")
+                raise HTTPException(status_code=404, detail=f"Repository '{repository_name}' not found")
             elif response.status != 200:
                 raise HTTPException(
                     status_code=response.status,
@@ -327,7 +327,7 @@ async def get_project_issues(
                     "total_pages": total_pages,
                     "count": len(issues)
                 },
-                "repository": project_name,
+                "repository": repository_name,
                 "filters": {
                     "state": state,
                     "labels": labels,

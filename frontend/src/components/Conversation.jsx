@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ConversationUsage } from './ConversationUsage'
 import { ModelConfigSelector } from './ModelConfigSelector'
 import { useConversation } from '../contexts/ConversationContext'
+import IssuesList from './IssuesList'
 
 const Conversation = ({ conversationId }) => {
     const navigate = useNavigate()
@@ -36,6 +37,11 @@ const Conversation = ({ conversationId }) => {
                 onViewTotal={() => navigate('/usage')}
             />
             <ModelConfigSelector />
+            
+            {/* Show issues list when no messages exist */}
+            {(!contextMessages || contextMessages.length === 0) && (
+                <IssuesList />
+            )}
             
             {contextMessages && contextMessages.map((conversation, idx) => (
                 <div key={conversation.id || idx} className="space-y-2">

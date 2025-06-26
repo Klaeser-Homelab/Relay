@@ -35,7 +35,7 @@ class Message(MessageBase):
 
 class ConversationBase(BaseModel):
     title: str
-    project_name: Optional[str] = None
+    repository_name: str
 
 
 class ConversationCreate(ConversationBase):
@@ -44,6 +44,9 @@ class ConversationCreate(ConversationBase):
 
 class ConversationRunRequest(BaseModel):
     prompt: str
+    triage_model: Optional[str] = None
+    planning_model: Optional[str] = None
+    repository_name: Optional[str] = None
 
 
 class ConversationStats(BaseModel):

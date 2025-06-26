@@ -32,9 +32,9 @@ interface SidebarContextType {
   // Settings
   openSettings: () => void
   
-  // Project
-  selectedProject: any | null
-  setSelectedProject: (project: any) => void
+  // Repository
+  selectedRepository: any | null
+  setSelectedRepository: (repository: any) => void
 }
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined)
@@ -72,8 +72,8 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   const [recentConversations, setRecentConversations] = useState<Conversation[]>([])
   const [loadingConversations, setLoadingConversations] = useState(false)
   
-  // Project
-  const [selectedProject, setSelectedProject] = useState<any | null>(null)
+  // Repository
+  const [selectedRepository, setSelectedRepository] = useState<any | null>(null)
   
   // Persist developer mode
   useEffect(() => {
@@ -168,9 +168,9 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     // Settings
     openSettings,
     
-    // Project
-    selectedProject,
-    setSelectedProject
+    // Repository
+    selectedRepository,
+    setSelectedRepository
   }
   
   return (

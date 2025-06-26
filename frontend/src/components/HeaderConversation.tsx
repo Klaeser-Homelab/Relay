@@ -2,13 +2,14 @@ import { Menu } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import React from 'react'
 import { useConversation } from '../contexts/ConversationContext'
+import IssuesBadge from './IssuesBadge'
 
 export const HeaderConversation = (props: { conversationId: string }) => {
   const navigate = useNavigate()
   const { conversationId } = props
   const { conversationData } = useConversation()
   
-  const projectName = conversationData?.project_name || conversationData?.title?.split(' - ')[0] || 'Unknown Project'
+  const repositoryName = conversationData?.repository_name || conversationData?.title?.split(' - ')[0] || 'Unknown Repository'
 
   return (
 <header className="p-4 bg-gray-900 border-b border-gray-700">
@@ -24,7 +25,7 @@ export const HeaderConversation = (props: { conversationId: string }) => {
             
             <div>
               <h1 className="text-2xl font-bold text-white">
-                {projectName}
+                {repositoryName}
               </h1>
               <p className="text-sm text-gray-400">Conversation ID: {conversationId}</p>
             </div>
@@ -41,6 +42,9 @@ export const HeaderConversation = (props: { conversationId: string }) => {
           </div>
 
         </div>
+        
+        {/* Issues badges row */}
+        <IssuesBadge />
       </header>
     )
 }

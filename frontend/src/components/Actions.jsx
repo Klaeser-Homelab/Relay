@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useConversation } from '../contexts/ConversationContext';
 import { useActions } from '../contexts/ActionsContext';
+import { useModelConfig } from '../contexts/ModelConfigContext.tsx';
 import { api } from '../config/api';
 
 const Actions = ({ conversationId }) => {
     const [inputMessage, setInputMessage] = useState('');
-    const { isStreaming, addMessage, updateMessage, setIsStreaming } = useConversation();
+    const { isStreaming, addMessage, updateMessage, setIsStreaming, repository } = useConversation();
     const { setCurrentAction } = useActions();
+    const { triageModel, planningModel } = useModelConfig();
 
     const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -43,7 +45,10 @@ const Actions = ({ conversationId }) => {
         
         try {
             const response = await api.post(`/conversations/${conversationId}/run`, {
-                prompt: prompt
+                prompt: prompt,
+                triage_model: triageModel?.name,
+                planning_model: planningModel?.name,
+                repository_name: repository
             });
             
             // The response is the complete chat object with AI response

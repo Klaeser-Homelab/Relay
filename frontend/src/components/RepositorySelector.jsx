@@ -2,55 +2,55 @@ import { useState, useEffect } from 'react'
 import { Search, Lock, Globe, Download, Loader, HardDrive, RefreshCw } from 'lucide-react'
 import { api } from '../config/api'
 
-export function ProjectSelector({ 
-  onSelectProject,
+export function RepositorySelector({ 
+  onSelectRepository,
   onCloneRepository 
 }) {
-  const [projects, setProjects] = useState([])
+  const [repositories, setRepositories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterLanguage, setFilterLanguage] = useState('')
 
   useEffect(() => {
-    fetchProjects()
+    fetchRepositories()
   }, [])
 
-  const fetchProjects = async () => {
+  const fetchRepositories = async () => {
     setLoading(true)
     setError(null)
     try {
-      const response = await api.get('/projects/')
-      setProjects(response.data.projects || [])
+      const response = await api.get('/repositories/')
+      setRepositories(response.data.repositories || [])
     } catch (err) {
-      setError(err.message || 'Failed to load projects')
+      setError(err.message || 'Failed to load repositories')
     } finally {
       setLoading(false)
     }
   }
 
-  const filteredProjects = projects.filter(project => {
-    const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         project.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         project.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredRepositories = repositories.filter(repository => {
+    const matchesSearch = repository.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         repository.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         repository.full_name.toLowerCase().includes(searchTerm.toLowerCase())
     
-    const matchesLanguage = !filterLanguage || project.language === filterLanguage
+    const matchesLanguage = !filterLanguage || repository.language === filterLanguage
     
     return matchesSearch && matchesLanguage
   })
 
-  const languages = Array.from(new Set(projects.map(p => p.language).filter(Boolean)))
+  const languages = Array.from(new Set(repositories.map(r => r.language).filter(Boolean)))
 
   if (error) {
     return (
       <div className="card">
         <div className="text-center">
           <div className="text-red-600 mb-4">
-            <h3 className="text-lg font-semibold">Error Loading Projects</h3>
+            <h3 className="text-lg font-semibold">Error Loading Repositories</h3>
             <p className="text-sm mt-2">{error}</p>
           </div>
           <button 
-            onClick={fetchProjects}
+            onClick={fetchRepositories}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Try Again
@@ -68,7 +68,7 @@ export function ProjectSelector({
             Select GitHub Repository
           </h2>
           <button
-            onClick={fetchProjects}
+            onClick={fetchRepositories}
             disabled={loading}
             className="flex items-center space-x-2 px-4 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50"
           >
@@ -111,18 +111,18 @@ export function ProjectSelector({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredProjects.map((project) => (
-              <ProjectCard
-                key={project.full_name}
-                project={project}
-                onSelect={() => onSelectProject(project)}
-                onClone={onCloneRepository ? () => onCloneRepository(project) : undefined}
+            {filteredRepositories.map((repository) => (
+              <RepositoryCard
+                key={repository.full_name}
+                repository={repository}
+                onSelect={() => onSelectRepository(repository)}
+                onClone={onCloneRepository ? () => onCloneRepository(repository) : undefined}
               />
             ))}
           </div>
         )}
 
-        {!loading && filteredProjects.length === 0 && (
+        {!loading && filteredRepositories.length === 0 && (
           <div className="text-center py-12 text-gray-400">
             {searchTerm || filterLanguage ? 'No repositories match your filters.' : 'No repositories found.'}
           </div>
@@ -132,7 +132,7 @@ export function ProjectSelector({
   )
 }
 
-function ProjectCard({ project, onSelect, onClone }) {
+function RepositoryCard({ repository, onSelect, onClone }) {
   const [isCloning, setIsCloning] = useState(false)
 
   const handleClone = async (e) => {
@@ -153,31 +153,31 @@ function ProjectCard({ project, onSelect, onClone }) {
       onClick={onSelect}
     >
       <div className="flex items-center space-x-2 mb-3">
-        {project.private ? (
+        {repository.private ? (
           <Lock className="w-4 h-4 text-gray-500" />
         ) : (
           <Globe className="w-4 h-4 text-gray-500" />
         )}
         <h3 className="font-semibold text-white truncate">
-          {project.name}
+          {repository.name}
         </h3>
       </div>
 
       <p className="text-sm text-gray-300 mb-3 line-clamp-2">
-        {project.description || 'No description available'}
+        {repository.description || 'No description available'}
       </p>
 
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center space-x-2">
-          {project.language && (
+          {repository.language && (
             <span className="inline-flex items-center px-2 py-1 rounded-full bg-gray-700 text-gray-200">
-              {project.language}
+              {repository.language}
             </span>
           )}
         </div>
         
         <div className="flex items-center space-x-2">
-          {project.is_cloned ? (
+          {repository.is_cloned ? (
             <div className="flex items-center text-green-600">
               <HardDrive className="w-3 h-3 mr-1" />
               Local

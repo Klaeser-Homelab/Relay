@@ -37,7 +37,7 @@ class ConversationService:
         conversation = Conversation(
             id=ConversationService.generate_conversation_id(),
             title=conversation_data.title,
-            project_name=conversation_data.project_name,
+            repository_name=conversation_data.repository_name,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )

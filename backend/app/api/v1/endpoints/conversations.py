@@ -92,28 +92,35 @@ async def run_conversation(
     if len(request.prompt) > 10000:
         raise HTTPException(status_code=400, detail="Prompt too long (max 10000 characters)")
     
-    # Get models from ModelConfig
-    from app.core.database import ModelConfig
-    from sqlalchemy import select
-    
-    # Get routing model (triage role)
-    triage_config_query = select(ModelConfig).where(ModelConfig.model_role == "triage")
-    triage_result = await db.execute(triage_config_query)
-    triage_config = triage_result.scalar_one_or_none()
-    routing_model = triage_config.model_name if triage_config else "gpt-4.1-nano"
-    
-    # Get planning model (planning role)
-    planning_config_query = select(ModelConfig).where(ModelConfig.model_role == "planning")
-    planning_result = await db.execute(planning_config_query)
-    planning_config = planning_result.scalar_one_or_none()
-    planning_model = planning_config.model_name if planning_config else "gpt-4.1-mini"
+    # Use provided models or fallback to ModelConfig lookup
+    if request.triage_model and request.planning_model:
+        # Use models provided in request
+        routing_model = request.triage_model
+        planning_model = request.planning_model
+    else:
+        # Fallback to database lookup
+        from app.core.database import ModelConfig
+        from sqlalchemy import select
+        
+        # Get routing model (triage role)
+        triage_config_query = select(ModelConfig).where(ModelConfig.model_role == "triage")
+        triage_result = await db.execute(triage_config_query)
+        triage_config = triage_result.scalar_one_or_none()
+        routing_model = triage_config.model_name if triage_config else "gpt-4.1-nano"
+        
+        # Get planning model (planning role)
+        planning_config_query = select(ModelConfig).where(ModelConfig.model_role == "planning")
+        planning_result = await db.execute(planning_config_query)
+        planning_config = planning_result.scalar_one_or_none()
+        planning_model = planning_config.model_name if planning_config else "gpt-4.1-mini"
     
     try:
         # Process the request through the agent service
         agent_response, metadata = await process_agent_request(
             request.prompt, 
             routing_model, 
-            planning_model
+            planning_model,
+            repository_name=request.repository_name
         )
         
         # Calculate processing time

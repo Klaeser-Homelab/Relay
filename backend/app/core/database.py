@@ -24,7 +24,7 @@ class Conversation(Base):
 
     id = Column(String(50), primary_key=True, index=True)  # e.g., "conv_1234567890_abc123"
     title = Column(String(200), nullable=False) # Title for the conversation, 
-    project_name = Column(String(200), nullable=True) # Project name for the conversation, GitHub repo name
+    repository_name = Column(String(200), nullable=False) # Repository name for the conversation, GitHub repo name (e.g., "rklaeser/PeoplePerson")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
