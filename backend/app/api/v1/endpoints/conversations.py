@@ -93,26 +93,65 @@ async def run_conversation(
         raise HTTPException(status_code=400, detail="Prompt too long (max 10000 characters)")
     
     # Use provided models or fallback to ModelConfig lookup
-    if request.triage_model and request.planning_model:
-        # Use models provided in request
-        routing_model = request.triage_model
-        planning_model = request.planning_model
+    from app.core.database import ModelConfig, Model
+    from sqlalchemy import select
+    
+    if request.routing_model and request.planning_model:
+        # Use models provided in request - fetch full model info
+        routing_model_query = select(Model).where(Model.name == request.routing_model)
+        routing_result = await db.execute(routing_model_query)
+        routing_model_obj = routing_result.scalar_one_or_none()
+        
+        planning_model_query = select(Model).where(Model.name == request.planning_model)
+        planning_result = await db.execute(planning_model_query)
+        planning_model_obj = planning_result.scalar_one_or_none()
+        
+        if not routing_model_obj or not planning_model_obj:
+            raise HTTPException(status_code=400, detail="Invalid model name provided")
+            
+        routing_model = {"name": routing_model_obj.name, "provider": routing_model_obj.provider}
+        planning_model = {"name": planning_model_obj.name, "provider": planning_model_obj.provider}
     else:
         # Fallback to database lookup
-        from app.core.database import ModelConfig
-        from sqlalchemy import select
+        # Get routing model (routing role)
+        routing_config_query = select(ModelConfig).where(ModelConfig.model_role == "routing")
+        routing_result = await db.execute(routing_config_query)
+        routing_config = routing_result.scalar_one_or_none()
         
-        # Get routing model (triage role)
-        triage_config_query = select(ModelConfig).where(ModelConfig.model_role == "triage")
-        triage_result = await db.execute(triage_config_query)
-        triage_config = triage_result.scalar_one_or_none()
-        routing_model = triage_config.model_name if triage_config else "gpt-4.1-nano"
+        if not routing_config:
+            raise HTTPException(status_code=500, detail="routing model configuration not found. Please configure a routing model.")
+            
+        routing_model_query = select(Model).where(Model.name == routing_config.model_name)
+        routing_result = await db.execute(routing_model_query)
+        routing_model_obj = routing_result.scalar_one_or_none()
+        
+        if not routing_model_obj:
+            raise HTTPException(status_code=500, detail=f"routing model '{routing_config.model_name}' not found in database.")
+            
+        routing_model = {"name": routing_model_obj.name, "provider": routing_model_obj.provider}
         
         # Get planning model (planning role)
         planning_config_query = select(ModelConfig).where(ModelConfig.model_role == "planning")
         planning_result = await db.execute(planning_config_query)
         planning_config = planning_result.scalar_one_or_none()
-        planning_model = planning_config.model_name if planning_config else "gpt-4.1-mini"
+        
+        if not planning_config:
+            raise HTTPException(status_code=500, detail="Planning model configuration not found. Please configure a planning model.")
+            
+        planning_model_query = select(Model).where(Model.name == planning_config.model_name)
+        planning_result = await db.execute(planning_model_query)
+        planning_model_obj = planning_result.scalar_one_or_none()
+        
+        if not planning_model_obj:
+            raise HTTPException(status_code=500, detail=f"Planning model '{planning_config.model_name}' not found in database.")
+            
+        planning_model = {"name": planning_model_obj.name, "provider": planning_model_obj.provider}
+        
+        # Get framework from request or config
+        agent_framework = request.agent_framework
+        if not agent_framework:
+            # Use framework from routing config (both should use same framework)
+            agent_framework = routing_config.agent_framework
     
     try:
         # Process the request through the agent service
@@ -120,6 +159,7 @@ async def run_conversation(
             request.prompt, 
             routing_model, 
             planning_model,
+            framework=agent_framework,
             repository_name=request.repository_name
         )
         
@@ -142,7 +182,7 @@ async def run_conversation(
             db=db,
             conversation_id=conversation_id,
             prompt=request.prompt,
-            model_name=f"{routing_model}→{planning_model}",
+            model_name=f"{routing_model['name']}→{planning_model['name']}",
             response=agent_response,
             input_tokens=input_tokens,
             output_tokens=output_tokens,

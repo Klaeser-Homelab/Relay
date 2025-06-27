@@ -1,4 +1,5 @@
 import { useModelConfig } from '../contexts/ModelConfigContext.tsx';
+import { useEffect } from 'react';
 
 export function ModelSelector({ role, label }) {
   const { 
@@ -17,6 +18,10 @@ export function ModelSelector({ role, label }) {
       console.error(`Failed to update ${role} model:`, err);
     }
   };
+
+  useEffect(() => {
+    console.log('Models:', models);
+  }, [models]);
 
 
   if (error) {

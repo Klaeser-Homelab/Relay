@@ -5,7 +5,7 @@ import { useModelConfig } from '../contexts/ModelConfigContext.tsx'
 
 export function ModelConfigSelector() {
     const { 
-        triageModel,
+        routingModel,
         planningModel,
         models
     } = useModelConfig()
@@ -14,17 +14,17 @@ export function ModelConfigSelector() {
     // Console log current model configuration once on mount
     useEffect(() => {
       console.log('Current Model Configuration:', {
-          triage: triageModel,
+          routing: routingModel,
           planning: planningModel,
           models: models
       })
-  }, [triageModel, planningModel, models])
+  }, [routingModel, planningModel, models])
 
   return (
     <div className="space-y-4">
       <ModelSelector 
-        role="triage" 
-        label="Triage Model"
+        role="routing" 
+        label="routing Model"
       />
       <ModelSelector 
         role="planning" 

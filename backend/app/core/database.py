@@ -33,12 +33,13 @@ class Conversation(Base):
 
 
 class ModelConfig(Base):
-    """Configuration for which model"""
+    """Configuration for which model and framework to use"""
     __tablename__ = "ModelConfig"
 
     id = Column(String(50), primary_key=True, index=True)  # e.g., "conv_1234567890_abc123"
     model_role = Column(String(200), nullable=False)
     model_name = Column(String(50), ForeignKey("models.name"), nullable=False, index=True)
+    agent_framework = Column(String(50), nullable=False, default="openai_agents")
 
     model_ref = relationship("Model")
 
@@ -114,7 +115,7 @@ async def seed_database():
             
             nano_model = Model(
                 name="gpt-4.1-nano",
-                provider="openai",
+                provider="OPENAI",
                 price_per_input_token=0.0000001,  # Example pricing
                 price_per_output_token=0.0000002,
                 max_tokens=4096,
@@ -123,30 +124,52 @@ async def seed_database():
             
             mini_model = Model(
                 name="gpt-4.1-mini", 
-                provider="openai",
+                provider="OPENAI",
                 price_per_input_token=0.0000005,  # Example pricing
                 price_per_output_token=0.000001,
                 max_tokens=8192,
                 is_active=True
             )
-            
+
+            claude_model = Model(
+                name="anthropic/claude-3-5-sonnet-20240620",
+                provider="ANTHROPIC",
+                price_per_input_token=0.0000001,  # Example pricing
+                price_per_output_token=0.0000002,
+                max_tokens=100000,
+                is_active=True
+            )
+
+            gemini_model = Model(
+                name="gemini/gemini-2.0-flash-lite",
+                provider="GEMINI",
+                price_per_input_token=0.0000001,  # Example pricing
+                price_per_output_token=0.0000002,
+                max_tokens=100000,
+                is_active=True
+            )
+
             session.add(nano_model)
             session.add(mini_model)
+            session.add(claude_model)
+            session.add(gemini_model)
             
             # Create model config entries
-            triage_config = ModelConfig(
+            routing_config = ModelConfig(
                 id=str(uuid.uuid4()),
-                model_role="triage",
-                model_name="gpt-4.1-nano"
+                model_role="routing",
+                model_name="gpt-4.1-nano",
+                agent_framework="openai_agents"
             )
             
             planning_config = ModelConfig(
                 id=str(uuid.uuid4()), 
                 model_role="planning",
-                model_name="gpt-4.1-mini"
+                model_name="gpt-4.1-mini",
+                agent_framework="openai_agents"
             )
             
-            session.add(triage_config)
+            session.add(routing_config)
             session.add(planning_config)
             
             await session.commit()

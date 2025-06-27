@@ -26,7 +26,7 @@ class ModelConfigService:
         db: AsyncSession, 
         role: str
     ) -> Optional[ModelConfig]:
-        """Get model configuration by role (e.g., 'triage', 'planning')"""
+        """Get model configuration by role (e.g., 'routing', 'planning')"""
         query = (
             select(ModelConfig)
             .options(selectinload(ModelConfig.model_ref))

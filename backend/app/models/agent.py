@@ -6,6 +6,7 @@ class AgentRunRequest(BaseModel):
     prompt: str
     routing_model: Optional[str] = "gpt-4.1-nano"
     planning_model: Optional[str] = "gpt-4.1-mini"
+    agent_framework: Optional[str] = "openai_agents"
     model: Optional[str] = None  # Keep for backward compatibility
     max_tokens: Optional[int] = 1000
     temperature: Optional[float] = 0.7

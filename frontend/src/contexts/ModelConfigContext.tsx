@@ -9,7 +9,7 @@ interface Model {
 
 interface ModelConfigContextType {
   // Current configured models
-  triageModel: Model | null
+  routingModel: Model | null
   planningModel: Model | null
   
   // All available models
@@ -24,7 +24,7 @@ interface ModelConfigContextType {
   getModelByRole: (role: string) => Model | null
   
   // Default model IDs (for use in API calls)
-  defaultTriageModelId: string | null
+  defaultroutingModelId: string | null
   defaultPlanningModelId: string | null
 }
 
@@ -43,13 +43,13 @@ interface ModelConfigProviderProps {
 }
 
 export function ModelConfigProvider({ children }: ModelConfigProviderProps) {
-  const [triageModel, setTriageModel] = useState<Model | null>(null)
+  const [routingModel, setroutingModel] = useState<Model | null>(null)
   const [planningModel, setPlanningModel] = useState<Model | null>(null)
   const [models, setModels] = useState<Model[]>([])
   const [error, setError] = useState<string | null>(null)
   
   // Default model names derived from current configurations
-  const defaultTriageModelId = triageModel?.name || null
+  const defaultroutingModelId = routingModel?.name || null
   const defaultPlanningModelId = planningModel?.name || null
 
   // Fetch all available models
@@ -81,9 +81,9 @@ export function ModelConfigProvider({ children }: ModelConfigProviderProps) {
         // Set the configured models based on the response
         const configs = data.data
         
-        if (configs.triage) {
-          setTriageModel(configs.triage)
-          console.log('Loaded triage model:', configs.triage.name)
+        if (configs.routing) {
+          setroutingModel(configs.routing)
+          console.log('Loaded routing model:', configs.routing.name)
         }
         
         if (configs.planning) {
@@ -114,9 +114,9 @@ export function ModelConfigProvider({ children }: ModelConfigProviderProps) {
       const data = await response.data
       if (data.success && data.data.model) {
         // Update the appropriate model state
-        if (role === 'triage') {
-          setTriageModel(data.data.model)
-          console.log('Updated triage model:', data.data.model.name)
+        if (role === 'routing') {
+          setroutingModel(data.data.model)
+          console.log('Updated routing model:', data.data.model.name)
         } else if (role === 'planning') {
           setPlanningModel(data.data.model)
           console.log('Updated planning model:', data.data.model.name)
@@ -132,8 +132,8 @@ export function ModelConfigProvider({ children }: ModelConfigProviderProps) {
   // Get model by role
   const getModelByRole = (role: string): Model | null => {
     switch (role) {
-      case 'triage':
-        return triageModel
+      case 'routing':
+        return routingModel
       case 'planning':
         return planningModel
       default:
@@ -156,7 +156,7 @@ export function ModelConfigProvider({ children }: ModelConfigProviderProps) {
 
   const value: ModelConfigContextType = {
     // Current configured models
-    triageModel,
+    routingModel,
     planningModel,
     
     // All available models
@@ -171,7 +171,7 @@ export function ModelConfigProvider({ children }: ModelConfigProviderProps) {
     getModelByRole,
     
     // Default model IDs for API usage
-    defaultTriageModelId,
+    defaultroutingModelId,
     defaultPlanningModelId
   }
 

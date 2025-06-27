@@ -11,7 +11,8 @@ const Conversation = ({ conversationId }) => {
         messages: contextMessages, 
         conversationData, 
         loading: contextLoading, 
-        loadConversation 
+        loadConversation,
+        selectedIssues 
     } = useConversation()
     
     // Auto-load conversation once on mount if conversationId is provided
@@ -38,8 +39,8 @@ const Conversation = ({ conversationId }) => {
             />
             <ModelConfigSelector />
             
-            {/* Show issues list when no messages exist */}
-            {(!contextMessages || contextMessages.length === 0) && (
+            {/* Show issues list when no messages exist and no issues are selected */}
+            {(!contextMessages || contextMessages.length === 0) && selectedIssues.length === 0 && (
                 <IssuesList />
             )}
             

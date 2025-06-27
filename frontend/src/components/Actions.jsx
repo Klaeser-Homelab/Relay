@@ -8,7 +8,7 @@ const Actions = ({ conversationId }) => {
     const [inputMessage, setInputMessage] = useState('');
     const { isStreaming, addMessage, updateMessage, setIsStreaming, repository } = useConversation();
     const { setCurrentAction } = useActions();
-    const { triageModel, planningModel } = useModelConfig();
+    const { routingModel, planningModel } = useModelConfig();
 
     const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -46,7 +46,7 @@ const Actions = ({ conversationId }) => {
         try {
             const response = await api.post(`/conversations/${conversationId}/run`, {
                 prompt: prompt,
-                triage_model: triageModel?.name,
+                routing_model: routingModel?.name,
                 planning_model: planningModel?.name,
                 repository_name: repository
             });

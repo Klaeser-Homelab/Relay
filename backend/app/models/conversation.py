@@ -44,8 +44,9 @@ class ConversationCreate(ConversationBase):
 
 class ConversationRunRequest(BaseModel):
     prompt: str
-    triage_model: Optional[str] = None
+    routing_model: Optional[str] = None
     planning_model: Optional[str] = None
+    agent_framework: Optional[str] = None
     repository_name: Optional[str] = None
 
 

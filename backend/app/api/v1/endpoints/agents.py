@@ -52,12 +52,32 @@ async def agent_run(request: AgentRunRequest, db: AsyncSession = Depends(get_db)
         # Process the request through the agent service
         print(f"DEBUG: About to call process_agent_request")
         # Use new model parameters or fall back to legacy model parameter
-        routing_model = request.routing_model or request.model or "gpt-4.1-nano"
-        planning_model = request.planning_model or request.model or "gpt-4.1-mini"
+        from app.core.database import Model
+        from sqlalchemy import select
+        
+        routing_model_name = request.routing_model or request.model or "gpt-4.1-nano"
+        planning_model_name = request.planning_model or request.model or "gpt-4.1-mini"
+        
+        # Fetch model details
+        routing_model_query = select(Model).where(Model.name == routing_model_name)
+        routing_result = await db.execute(routing_model_query)
+        routing_model_obj = routing_result.scalar_one_or_none()
+        
+        planning_model_query = select(Model).where(Model.name == planning_model_name)
+        planning_result = await db.execute(planning_model_query)
+        planning_model_obj = planning_result.scalar_one_or_none()
+        
+        if not routing_model_obj or not planning_model_obj:
+            raise HTTPException(status_code=400, detail="Invalid model name provided")
+        
+        routing_model = {"name": routing_model_obj.name, "provider": routing_model_obj.provider}
+        planning_model = {"name": planning_model_obj.name, "provider": planning_model_obj.provider}
+        
         agent_response, metadata = await process_agent_request(
             request.prompt, 
             routing_model, 
-            planning_model
+            planning_model,
+            framework=request.agent_framework
         )
         print(f"DEBUG: Agent response received: {agent_response[:50] if agent_response else 'None'}...")
         
@@ -83,7 +103,7 @@ async def agent_run(request: AgentRunRequest, db: AsyncSession = Depends(get_db)
                 db=db,
                 conversation_id=conversation_id,
                 prompt=request.prompt,
-                model_id=f"{routing_model}→{planning_model}",
+                model_id=f"{routing_model['name']}→{planning_model['name']}",
                 response=agent_response,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -116,7 +136,7 @@ async def agent_run(request: AgentRunRequest, db: AsyncSession = Depends(get_db)
                 timestamp=datetime.now().isoformat(),
                 prompt=request.prompt,
                 response=agent_response,
-                model_id=f"{routing_model}→{planning_model}",
+                model_id=f"{routing_model['name']}→{planning_model['name']}",
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 input_cost=0.0,
@@ -153,7 +173,7 @@ async def agent_run(request: AgentRunRequest, db: AsyncSession = Depends(get_db)
                     db=db,
                     conversation_id=conversation_id,
                     prompt=request.prompt,
-                    model_id=f"{routing_model}→{planning_model}",
+                    model_id=f"{routing_model['name']}→{planning_model['name']}",
                     response=None,
                     input_tokens=len(request.prompt.split()) if hasattr(request, 'prompt') else 0,
                     output_tokens=0,
