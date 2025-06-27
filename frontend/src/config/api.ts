@@ -1,9 +1,9 @@
-import axios from 'axios';
+import axios, { AxiosInstance } from 'axios';
 
 const BASE_URL = 'http://localhost:8080';
 const API_VERSION = 'v1';
 
-const api = axios.create({
+const api: AxiosInstance = axios.create({
   baseURL: `${BASE_URL}/api/${API_VERSION}`,
   headers: {
     'Content-Type': 'application/json'
@@ -63,4 +63,4 @@ api.interceptors.response.use(
 */
 
 export { api };
-export default api;
+export default api; 

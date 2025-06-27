@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
-import { api } from '../config/api'
+import api from '../config/api'
 
 interface Message {
   id: string
@@ -247,7 +247,7 @@ export function ConversationProvider({ children }: ConversationProviderProps) {
       
       const response = await fetch(`https://api.github.com/repos/${repo}/issues?state=open`, {
         headers: {
-          'Authorization': 'Bearer ' + process.env.GH_TOKEN,
+          'Authorization': 'Bearer ' + import.meta.env.VITE_GH_TOKEN,
           'Accept': 'application/vnd.github.v3+json'
         }
       })
