@@ -97,7 +97,8 @@ class OpenAIAgentsFramework(AgentFramework):
         prompt: str, 
         routing_model: ModelInfo, 
         planning_model: ModelInfo, 
-        repository_name: Optional[str] = None
+        repository_name: Optional[str] = None,
+        selected_issue: Optional[Dict] = None
     ) -> Tuple[str, Optional[Dict]]:
         """Process an agent request using OpenAI Agents SDK"""
         
@@ -133,6 +134,9 @@ When creating GitHub issues:
                 if repository_name:
                     github_instructions += f"\n\nThe current repository context is '{repository_name}'. When the user refers to 'this repo', 'add an issue', 'create a PR', or similar repository operations without specifying a repository, use '{repository_name}' as the repository."
                 
+                if selected_issue:
+                    github_instructions += f"\n\nThe currently selected issue is #{selected_issue.get('number')}: '{selected_issue.get('title')}'. When the user refers to 'this issue', 'the issue', or similar, they are referring to this specific issue."
+                
                 github_agent = Agent(
                     name="GitHub Agent",
                     instructions=github_instructions,
@@ -142,8 +146,8 @@ When creating GitHub issues:
 
                 routing_instructions = (
                     "Decide which agent to use based on the prompt. "
-                    "If about planning, GitHub repositories, issues, pull requests, or code management, use the GitHub agent. "
-                    "For other requests, respond directly as a helpful assistant."
+                    "Handoff all requests to the GitHub agent. "
+                    "For other requests, apologize and say you are not able to help with that."
                 )
 
                 routing_agent = Agent(

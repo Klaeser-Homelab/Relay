@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { useConversation } from '../contexts/ConversationContext';
 import { useActions } from '../contexts/ActionsContext';
 import { useModelConfig } from '../contexts/ModelConfigContext.tsx';
+import { useSettings } from '../contexts/SettingsContext.tsx';
 import { api } from '../config/api';
 
 const Actions = ({ conversationId }) => {
     const [inputMessage, setInputMessage] = useState('');
-    const { isStreaming, addMessage, updateMessage, setIsStreaming, repository } = useConversation();
+    const { selectedIssue, isStreaming, addMessage, updateMessage, setIsStreaming, repository } = useConversation();
     const { setCurrentAction } = useActions();
     const { routingModel, planningModel } = useModelConfig();
+    const { selectedFramework } = useSettings();
 
     const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -48,7 +50,9 @@ const Actions = ({ conversationId }) => {
                 prompt: prompt,
                 routing_model: routingModel?.name,
                 planning_model: planningModel?.name,
-                repository_name: repository
+                repository_name: repository,
+                agent_framework: selectedFramework,
+                selected_issue: selectedIssue
             });
             
             // The response is the complete chat object with AI response

@@ -43,7 +43,7 @@ interface ConversationContextType {
   
   // Issues data
   repositoryIssues: Issue[]
-  selectedIssues: Issue[]
+  selectedIssue: Issue | null
   repository: string | null
   
   // State
@@ -88,7 +88,7 @@ export function ConversationProvider({ children }: ConversationProviderProps) {
   const [error, setError] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [repositoryIssues, setRepositoryIssues] = useState<Issue[]>([])
-  const [selectedIssues, setSelectedIssues] = useState<Issue[]>([])
+  const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null)
   const [repository, setRepository] = useState<string | null>(null)
   const [issuesLoading, setIssuesLoading] = useState(false)
 
@@ -279,17 +279,12 @@ export function ConversationProvider({ children }: ConversationProviderProps) {
 
   // Select an issue
   const selectIssue = useCallback((issue: Issue) => {
-    setSelectedIssues(prev => {
-      if (prev.find(i => i.number === issue.number)) {
-        return prev // Already selected
-      }
-      return [...prev, issue]
-    })
+    setSelectedIssue(issue)
   }, [])
 
   // Remove a selected issue
-  const removeIssue = useCallback((issueNumber: number) => {
-    setSelectedIssues(prev => prev.filter(issue => issue.number !== issueNumber))
+  const removeIssue = useCallback(() => {
+    setSelectedIssue(null)
   }, [])
 
   const value: ConversationContextType = {
@@ -302,7 +297,7 @@ export function ConversationProvider({ children }: ConversationProviderProps) {
     
     // Issues data
     repositoryIssues,
-    selectedIssues,
+    selectedIssue,
     repository,
     
     // State

@@ -28,7 +28,8 @@ class LangGraphFramework(AgentFramework):
         prompt: str, 
         routing_model: ModelInfo, 
         planning_model: ModelInfo, 
-        repository_name: Optional[str] = None
+        repository_name: Optional[str] = None,
+        selected_issue: Optional[Dict] = None
     ) -> Tuple[str, Optional[Dict]]:
         """Process an agent request using LangGraph"""
         

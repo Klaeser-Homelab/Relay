@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import React from 'react'
 import { useConversation } from '../contexts/ConversationContext'
 import IssuesBadge from './IssuesBadge'
+import { FrameworkSelector } from './FrameworkSelector'
 
 export const HeaderConversation = (props: { conversationId: string }) => {
   const navigate = useNavigate()
@@ -30,8 +31,9 @@ export const HeaderConversation = (props: { conversationId: string }) => {
               <p className="text-sm text-gray-400">Conversation ID: {conversationId}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-          <button
+          <div className="flex items-center gap-4">
+            <FrameworkSelector />
+            <button
                 onClick={() => navigate('/')}
                 className="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-1"
                 title="Start new conversation"

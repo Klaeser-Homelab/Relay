@@ -4,7 +4,7 @@ import { useConversation } from '../contexts/ConversationContext';
 const IssuesList = () => {
   const { 
     repositoryIssues, 
-    selectedIssues, 
+    selectedIssue, 
     issuesLoading, 
     error,
     fetchRepositoryIssues,
@@ -61,7 +61,7 @@ const IssuesList = () => {
       
       <div className="space-y-3">
         {repositoryIssues.map((issue) => {
-          const isSelected = selectedIssues.find(i => i.number === issue.number);
+          const isSelected = selectedIssue?.number === issue.number;
           
           return (
             <button

@@ -11,7 +11,8 @@ async def process_agent_request(
     routing_model: ModelInfo, 
     planning_model: ModelInfo, 
     framework: str = "openai_agents",
-    repository_name: Optional[str] = None
+    repository_name: Optional[str] = None,
+    selected_issue: Optional[Dict] = None
 ) -> Tuple[str, Optional[Dict]]:
     """
     Process an agent request using the specified framework.
@@ -22,6 +23,7 @@ async def process_agent_request(
         planning_model: Model info dict with 'name' and 'provider' for the planning agent
         framework: Name of the agent framework to use
         repository_name: Optional repository name for context
+        selected_issue: Optional selected issue dict for context
         
     Returns:
         Tuple of (response, metadata) where metadata includes token counts
@@ -37,7 +39,8 @@ async def process_agent_request(
         prompt=prompt,
         routing_model=routing_model,
         planning_model=planning_model,
-        repository_name=repository_name
+        repository_name=repository_name,
+        selected_issue=selected_issue
     )
 
 

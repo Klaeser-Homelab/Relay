@@ -48,6 +48,7 @@ class ConversationRunRequest(BaseModel):
     planning_model: Optional[str] = None
     agent_framework: Optional[str] = None
     repository_name: Optional[str] = None
+    selected_issue: Optional[dict] = None
 
 
 class ConversationStats(BaseModel):

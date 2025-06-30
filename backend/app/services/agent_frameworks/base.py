@@ -28,7 +28,8 @@ class AgentFramework(ABC):
         prompt: str, 
         routing_model: ModelInfo, 
         planning_model: ModelInfo, 
-        repository_name: Optional[str] = None
+        repository_name: Optional[str] = None,
+        selected_issue: Optional[Dict] = None
     ) -> Tuple[str, Optional[Dict]]:
         """
         Process an agent request using this framework.
@@ -38,6 +39,7 @@ class AgentFramework(ABC):
             routing_model: Model info for the routing agent
             planning_model: Model info for the planning agent
             repository_name: Optional repository name for context
+            selected_issue: Optional selected issue dict for context
             
         Returns:
             Tuple of (response, metadata) where metadata includes token counts

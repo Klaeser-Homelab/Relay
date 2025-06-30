@@ -74,6 +74,7 @@ async def run_conversation(
     request: ConversationRunRequest,
     db: AsyncSession = Depends(get_db)
 ):
+    print(request)
     """Process a prompt through AI agent and create a chat record in the conversation"""
     import time
     from app.services.agent_service import process_agent_request
@@ -95,6 +96,9 @@ async def run_conversation(
     # Use provided models or fallback to ModelConfig lookup
     from app.core.database import ModelConfig, Model
     from sqlalchemy import select
+    
+    # Initialize agent_framework from request
+    agent_framework = request.agent_framework
     
     if request.routing_model and request.planning_model:
         # Use models provided in request - fetch full model info
@@ -147,8 +151,7 @@ async def run_conversation(
             
         planning_model = {"name": planning_model_obj.name, "provider": planning_model_obj.provider}
         
-        # Get framework from request or config
-        agent_framework = request.agent_framework
+        # Get framework from config if not provided in request
         if not agent_framework:
             # Use framework from routing config (both should use same framework)
             agent_framework = routing_config.agent_framework
@@ -160,7 +163,8 @@ async def run_conversation(
             routing_model, 
             planning_model,
             framework=agent_framework,
-            repository_name=request.repository_name
+            repository_name=request.repository_name,
+            selected_issue=request.selected_issue
         )
         
         # Calculate processing time
