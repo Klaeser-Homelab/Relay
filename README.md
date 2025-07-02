@@ -1,6 +1,6 @@
 # Relay
 
-[![CI Status](https://github.com/yourusername/relay/workflows/Relay%20Server%20CI/badge.svg)](https://github.com/yourusername/relay/actions)
+[![CI Status](https://github.com/Klaeser-Homelab/relay/workflows/Relay%20Server%20CI/badge.svg)](https://github.com/Klaeser-Homelab/relay/actions)
 
 ![relay](https://github.com/user-attachments/assets/98b0e667-9a87-42b1-a7a8-ce2ed44de9c2)
 
