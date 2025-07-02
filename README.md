@@ -1,10 +1,11 @@
 # Relay
 
 [![CI Status](https://github.com/yourusername/relay/workflows/Relay%20Server%20CI/badge.svg)](https://github.com/yourusername/relay/actions)
-[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**Code from anywhere, control with your voice**
+![relay](https://github.com/user-attachments/assets/98b0e667-9a87-42b1-a7a8-ce2ed44de9c2)
+
+
+**Plan features from anywhere, control with your voice**
 
 A mobile friendly voice-controlled development proof of concept.
 
