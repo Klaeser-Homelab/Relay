@@ -2,8 +2,7 @@
 
 [![CI Status](https://github.com/Klaeser-Homelab/relay/workflows/Relay%20Server%20CI/badge.svg)](https://github.com/Klaeser-Homelab/relay/actions)
 
-![relay](https://github.com/user-attachments/assets/98b0e667-9a87-42b1-a7a8-ce2ed44de9c2)
-
+![1fd1b0258215367f66aec97b6084fdb5d945b555264e6324a5305f95503045af](https://github.com/user-attachments/assets/e84a0f0b-c777-4989-a6a7-630fdbd3520d)
 
 **Plan features from anywhere, control with your voice**
 
